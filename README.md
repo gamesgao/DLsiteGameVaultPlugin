@@ -15,11 +15,34 @@ Recognize DLsite product IDs in game filenames, fetch covers and metadata, and m
 
 ## Design and development
 
+- [Core API and parsing decisions](docs/core.md)
 - [Current design](docs/design.md)
 - [Component delivery and acceptance](docs/implementation.md)
 - [Testing principles](docs/testing.md)
 - [Original Copilot planning document](docs/copilot-original-plan.md): preserved for provenance; the current design deliberately narrows speculative hardening and excessive abstraction.
 - [Contribution guidelines](CONTRIBUTING.md)
+
+### Developer commands
+
+Use Node.js 24 LTS (or a compatible Node.js 26+ environment) and npm. Run from
+the repository root:
+
+```sh
+npm ci
+npm test
+npm run test:coverage
+npm run typecheck
+npm run build
+```
+
+`npm run format:check` checks TypeScript/config formatting; `npm run format`
+applies it. Dependencies are locked in `package-lock.json`. Tests are offline
+and use synthetic fixtures, with coverage gates described in
+[docs/testing.md](docs/testing.md).
+
+The current build emits only the identity/parsing library in `dist/`, with ESM
+JavaScript and TypeScript declarations. It does **not** yet contain a GameVault
+plugin module, network client, or installable release.
 
 ## Credits and license
 
