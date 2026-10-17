@@ -67,11 +67,16 @@ secret is required.
 
 ## First remote acceptance
 
-Local checks do not prove a GitHub-hosted run succeeded. A maintainer must
-push the workflow using an already authorized transport. The currently
-reported `gh` OAuth token lacks the `workflow` scope, so pushing workflow
-files over that HTTPS credential may be rejected. Do not work around this by
-adding a PAT to the workflow or changing repository permissions.
+[Hosted run 39014813257](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39014813257)
+passed on Ubuntu 24.04 / Node 24.21.0: all 224 tests and coverage gates,
+native dependencies, packaging, one-provider/zero-live-fetch registration and
+artifact upload succeeded. The coordinating agent downloaded `plugin-package`
+and independently verified its SHA256 and ZIP integrity. Release was correctly
+skipped for this branch push; no existing release was changed.
+
+Publishing workflow files requires an authorized credential (for GitHub CLI
+OAuth, the `workflow` scope). Use the normal local authorization flow if a
+push is rejected; never add a PAT to the workflow as a workaround.
 
 The branch push itself triggers build-only acceptance. Once the workflow is
 on the default branch, it can also be dispatched without inputs:
@@ -90,6 +95,8 @@ Check that all build gates passed, the registration smoke reports one DLsite
 provider and zero live requests, both artifacts exist, and the release job
 was skipped. Record the actual run URL and result in `docs/verification.md`.
 Do not push/recreate `v0.1.0` or publish a throwaway version just to test CI.
-Until this remote acceptance runs, Ubuntu package availability, native binding
-installation on Linux, hosted action execution and artifact transfer remain
-unverified; local macOS success is not evidence for those surfaces.
+The hosted run verifies Ubuntu dependencies, native binding installation,
+Actions execution and build artifact transfer. Tag-triggered release publication
+has not yet been exercised; it will run for the next intentional matching
+version tag. This is not evidence of Linux live-DLsite lifecycle, NAS, Docker,
+PostgreSQL or GUI compatibility.

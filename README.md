@@ -7,9 +7,9 @@ account or Playnite installation is required.
 
 **Compatibility:** tested against GameVault **17.0.1, revision `859d71e`**,
 Node **26.7.0**, SQLite **3.53.4**, on native macOS. This is an ESM plugin for
-the 17.0.1 plugin API, not for older CommonJS hosts. Node 24 LTS is the intended
-CI baseline; its core tests/build pass locally, but full host acceptance on
-Node 24 is still pending. Other host revisions,
+the 17.0.1 plugin API, not for older CommonJS hosts. GitHub-hosted Ubuntu 24.04 /
+Node 24.21.0 also passed all 224 offline tests, package build and actual host
+registration. Live DLsite lifecycle testing remains macOS-only. Other host revisions,
 PostgreSQL, Docker, NAS and client GUIs are untested; see
 [verification](docs/verification.md).
 
@@ -173,7 +173,8 @@ coverage, type checks, packaging and extracted-plugin registration on branch
 pushes, pull requests and manual dispatch. It targets Ubuntu 24.04 / Node 24
 with the exact compatible GameVault revision above, and retains the tested
 ZIP/checksum bundle and coverage reports for 14 days. Live DLsite E2E remains
-local and opt-in; workflow configuration alone is not a verified runner result.
+local and opt-in. [The first hosted run passed](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39014813257);
+the downloaded package checksum and ZIP integrity were independently verified.
 
 Only a pushed `vVERSION` tag matching `package.json` can publish, after all
 gates pass, using the exact tested artifact. Manual runs never release, and

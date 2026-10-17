@@ -1,5 +1,24 @@
 # Executed verification
 
+## Hosted Actions acceptance — 2026-10-17
+
+[Actual run 39014813257](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39014813257)
+completed successfully on the `ci/automated-release` branch at `de6452f`.
+Ubuntu 24.04 / Node **24.21.0** / SQLite **3.53.4** ran all **224 offline tests**,
+type checks, formatting, unchanged coverage gates, native dependency installation,
+package build and real extracted-plugin host registration (**one DLsite**, **zero
+live requests**). Both package and coverage artifacts uploaded successfully.
+The coordinating agent downloaded `plugin-package` and independently checked
+SHA256 and ZIP integrity. Its plugin ZIP digest was
+`c290ff08ac9c8f414fb55bd48a0e133dd3ed60baa6677f33f9479bcf666d427b`.
+
+The release job correctly **skipped** this branch push. Existing `v0.1.0` was
+not replaced and no test release/tag was created. Tag-triggered publication is
+configured but not yet executed; Linux live-DLsite lifecycle, Docker, PostgreSQL,
+NAS and GUI are not covered by this offline hosted acceptance. The pending
+hosted checks in the historical implementation-session notes below are now
+resolved for build, registration and artifact transfer only.
+
 ## Actions implementation follow-up — 2026-10-17
 
 **Configuration and partial local validation, not a remote Actions result.**
