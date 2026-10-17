@@ -24,8 +24,9 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.json\" vitest.config.ts",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.json\" vitest.config.ts"
+    "smoke:dlsite": "node scripts/smoke-dlsite.mjs",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\" \"*.json\" vitest.config.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\" \"*.json\" vitest.config.ts"
   },
   "dependencies": {
     "cheerio": "1.2.0",

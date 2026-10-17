@@ -16,6 +16,8 @@ Recognize DLsite product IDs in game filenames, fetch covers and metadata, and m
 ## Design and development
 
 - [Core API and parsing decisions](docs/core.md)
+- [HTTP client API, configuration and refresh behavior](docs/client.md)
+- [Executed verification](docs/verification.md)
 - [Current design](docs/design.md)
 - [Component delivery and acceptance](docs/implementation.md)
 - [Testing principles](docs/testing.md)
@@ -35,14 +37,16 @@ npm run typecheck
 npm run build
 ```
 
-`npm run format:check` checks TypeScript/config formatting; `npm run format`
+`npm run format:check` checks TypeScript/config/script formatting; `npm run format`
 applies it. Dependencies are locked in `package-lock.json`. Tests are offline
 and use synthetic fixtures, with coverage gates described in
 [docs/testing.md](docs/testing.md).
 
-The current build emits only the identity/parsing library in `dist/`, with ESM
-JavaScript and TypeScript declarations. It does **not** yet contain a GameVault
-plugin module, network client, or installable release.
+The current build emits the identity/parsing library and HTTP client in `dist/`,
+with ESM JavaScript and TypeScript declarations. It does **not** yet contain a
+GameVault plugin module or installable release. After building, the opt-in
+`npm run smoke:dlsite` checks two real public games, title search and a cover;
+it is never run by the offline unit suite.
 
 ## Credits and license
 

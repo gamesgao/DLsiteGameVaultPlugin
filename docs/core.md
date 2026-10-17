@@ -1,9 +1,10 @@
 # Identity and parsing core
 
-This component is an offline TypeScript ESM library, not an installable GameVault
-plugin. `src/index.ts` is the public entry point; `npm run build` emits
-`dist/index.js` and declarations. No NestJS/backend copy, HTTP client, cookies,
-browser execution or live calls are included.
+This component is the offline parsing part of the TypeScript ESM library, not
+an installable GameVault plugin. `src/index.ts` is the public entry point;
+`npm run build` emits `dist/index.js` and declarations. The parsers have no
+network dependency. The separate [HTTP client](client.md) now supplies network
+requests; no NestJS/backend copy or browser execution is included.
 
 ## Public API
 
@@ -31,7 +32,7 @@ import {
 const id = extractWorkId("[RJ000001] Tiny Adventure (W).zip");
 if (id) {
   const lookupUrl = buildWorkUrl(id);
-  // The next client component supplies HTML and optionally decoded JSON.
+  // The HTTP client supplies HTML and optionally decoded JSON.
   const product = parseProductHtml(html, lookupUrl, {
     RJ000001: { work_name: "Tiny Adventure", rate_average_2dp: "4.25" },
   });
@@ -57,8 +58,9 @@ removed. Distinct IDs in the URL are rejected rather than guessed.
 The Playnite reference uses `home` as a generic ID lookup route. We use that
 route without inferring sections from prefixes. A matching HTML canonical link
 can supply a different section; conflicting canonical/primary product IDs fail.
-Other sections, alternate work URL shapes, and successful live lookup of every
-prefix still need client-stage evidence.
+The client's live smoke now confirms a `home` to `maniax` redirect for RJ150726
+and a direct `home` lookup for RJ141995. Other sections, alternate work URL
+shapes, and successful live lookup of every prefix remain unverified.
 
 ## Product fields and presence
 
@@ -97,11 +99,13 @@ DLsite locales.
 Search uses the reference plugin's `.work_1col_table.n_worklist` rows,
 `.work_name a` links and `.work_text` excerpts. An existing empty list is a valid
 `[]`. Missing list structure, including an unrecognized no-results layout, is
-`invalid-page`, not a silent successful empty search. Broken entries are skipped
+`invalid-page`, not a silent successful empty search. The client's live checks
+also confirmed `.work_not_found > .lead` as DLsite's explicit no-results layout;
+that layout now returns `[]` without requiring a result table. Broken entries are skipped
 if other usable results exist; a nonempty list with no usable entries fails.
 The known `.error_box_work` marker produces `unavailable` for either parser.
 
-The next client supplies downloaded HTML/final URLs and optional decoded JSON,
+The client supplies downloaded HTML/final URLs and optional decoded JSON,
 and handles transport status, redirects, retries and caching. The adapter uses
 the complete `id` for identity, maps work types conservatively, consumes `score`
 unchanged, and preserves previous fields on missing data or parse failure.

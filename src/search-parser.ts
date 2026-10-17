@@ -9,6 +9,7 @@ export function parseSearchHtml(html: string): DlsiteSearchCandidate[] {
   assertAvailable($);
   const lists = $(".work_1col_table.n_worklist");
   if (!lists.length) {
+    if ($(".work_not_found > .lead").length) return [];
     throw new DlsiteParseError(
       "invalid-page",
       "DLsite search result list is missing",

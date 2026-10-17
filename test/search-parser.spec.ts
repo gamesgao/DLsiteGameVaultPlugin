@@ -8,6 +8,20 @@ const fixture = readFileSync(
 );
 
 describe("parseSearchHtml", () => {
+  it("recognizes the observed DLsite no-results layout without guessing from arbitrary text", () => {
+    expect(
+      parseSearchHtml(
+        readFileSync(
+          new URL("./fixtures/search-empty.html", import.meta.url),
+          "utf8",
+        ),
+      ),
+    ).toEqual([]);
+    expect(() =>
+      parseSearchHtml("<p>条件に一致する作品は見つかりませんでした</p>"),
+    ).toThrow(DlsiteParseError);
+  });
+
   it("parses the real list structure and keeps the first candidate per work ID", () => {
     expect(parseSearchHtml(fixture)).toEqual([
       {
