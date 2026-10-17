@@ -144,10 +144,9 @@ entry. Rejected operations are never cached and their in-flight entry is removed
 
 For host TTL refresh/remap, pass `forceRefresh: true` when fresh data is required;
 do not let the client's short cache extend the host's refresh decision.
-Selecting a different ID naturally uses a different key. The future adapter
-must retain previously saved metadata on failures and treat absent fields as
-unknown, not as permission to clear fields/relations/images. This component
-does not implement that persistence layer.
+Selecting a different ID naturally uses a different key. The [native adapter](provider.md) retains previously saved same-ID metadata
+on failures and treats absent fields as unknown, not as permission to clear
+fields/relations/images. This standalone client does not implement persistence.
 
 ## Opt-in live smoke
 

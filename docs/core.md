@@ -1,7 +1,8 @@
 # Identity and parsing core
 
 This component is the offline parsing part of the TypeScript ESM library, not
-an installable GameVault plugin. `src/index.ts` is the public entry point;
+by itself an installable GameVault plugin. The [native adapter](provider.md)
+packages it separately. `src/index.ts` is the public entry point;
 `npm run build` emits `dist/index.js` and declarations. The parsers have no
 network dependency. The separate [HTTP client](client.md) now supplies network
 requests; no NestJS/backend copy or browser execution is included.
@@ -47,7 +48,7 @@ Preserve leading zeroes and the complete prefix: no padding or `RE` to `RJ`
 conversion. ASCII letters/digits cannot touch either side of an extracted ID;
 spaces, square brackets, underscores, Japanese punctuation and GameVault tags
 can delimit it. A GameVault `(NC)` tag does not change identity recognition;
-the future adapter remains responsible for respecting no-refresh behavior.
+the native adapter leaves no-refresh behavior to GameVault.
 
 Work URLs must use HTTP(S), exactly `dlsite.com` or `www.dlsite.com`, no credentials
 or nonstandard port, and the observed `/section/work/=/product_id/ID.html` shape.

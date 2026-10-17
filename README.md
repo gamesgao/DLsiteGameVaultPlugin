@@ -2,7 +2,10 @@
 
 A native DLsite metadata provider for [GameVault](https://gamevau.lt/).
 
-This project is being implemented component by component. It is not yet a released plugin; tested installation instructions and compatibility evidence will be added before the first release.
+The native provider and plugin package are implemented. An extracted archive
+has loaded and registered on an isolated GameVault 17.0.1 server. This is not
+yet a release: full persisted metadata/media lifecycle and update/removal
+acceptance are the next component.
 
 ## Goal
 
@@ -17,6 +20,7 @@ Recognize DLsite product IDs in game filenames, fetch covers and metadata, and m
 
 - [Core API and parsing decisions](docs/core.md)
 - [HTTP client API, configuration and refresh behavior](docs/client.md)
+- [Native provider, configuration, build and installation](docs/provider.md)
 - [Executed verification](docs/verification.md)
 - [Current design](docs/design.md)
 - [Component delivery and acceptance](docs/implementation.md)
@@ -42,11 +46,47 @@ applies it. Dependencies are locked in `package-lock.json`. Tests are offline
 and use synthetic fixtures, with coverage gates described in
 [docs/testing.md](docs/testing.md).
 
-The current build emits the identity/parsing library and HTTP client in `dist/`,
-with ESM JavaScript and TypeScript declarations. It does **not** yet contain a
-GameVault plugin module or installable release. After building, the opt-in
+`npm run build` emits the standalone identity/parsing library and HTTP client
+in `dist/`, with ESM JavaScript and TypeScript declarations. After building, the opt-in
 `npm run smoke:dlsite` checks two real public games, title search and a cover;
 it is never run by the offline unit suite.
+
+### Build and install the native plugin
+
+Use a disposable compatible GameVault source checkout with its pnpm dependencies
+installed. The script stages `.local/plugins/dlsite`, runs the host build, and
+packages only the plugin plus private scraper dependencies:
+
+```sh
+npm run typecheck:provider -- --backend /path/to/gamevault-backend
+npm run test:provider -- --backend /path/to/gamevault-backend
+npm run test:provider:coverage -- --backend /path/to/gamevault-backend
+npm run build:plugin -- --backend /path/to/gamevault-backend
+npm run smoke:plugin -- --backend /path/to/gamevault-backend
+```
+
+Stop the destination server and extract `artifacts/dlsite-0.1.0.zip` into its
+plugin volume:
+
+```sh
+unzip artifacts/dlsite-0.1.0.zip -d /path/to/plugin-volume
+```
+
+Restart GameVault with that volume configured as `VOLUMES_PLUGINS`. The
+authenticated `GET /api/metadata/providers` should list `dlsite`.
+Optional server environment configuration:
+
+```sh
+PLUGIN_GAMESGAO_DLSITE_LOCALE=ja_JP
+PLUGIN_GAMESGAO_DLSITE_PRIORITY=20
+PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS=500
+```
+
+Automatic matching requires an unambiguous work ID in the title/filename.
+Keyword and work-URL searches support manual mapping. NC handling and user
+metadata precedence are unchanged. See [provider.md](docs/provider.md) for
+supported locales, field/refresh semantics, separate adapter coverage,
+host image limitations and complete installation/removal guidance.
 
 ## Credits and license
 

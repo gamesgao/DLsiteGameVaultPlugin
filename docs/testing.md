@@ -25,3 +25,31 @@ Record real command results and supported versions in docs/verification.md. Clea
 For the client-only opt-in public HTTP check, run `npm run build` followed by
 `npm run smoke:dlsite`. It uses built output, bounded request/time budgets, and
 prints statuses and concise fields without saving product pages or images.
+
+## Native provider commands
+
+The default suite covers `src/**/*.ts`. The native adapter under `plugin/`
+requires real host imports and has its own explicit configuration and **the
+same coverage gates**, with no adapter exclusion:
+
+```sh
+npm run typecheck:provider -- --backend /path/to/gamevault-backend
+npm run test:provider -- --backend /path/to/gamevault-backend
+npm run test:provider:coverage -- --backend /path/to/gamevault-backend
+```
+
+These commands stage the plugin and use the host compiler. The test commands
+then run `vitest.provider.config.ts` against every `plugin/**/*.ts` file with
+real host Nest/base/entity classes. Tests substitute host storage/media modules
+and standard fetch, not matching, mapping, client or parsing logic. The host's
+AppModule is imported first, like its real main, to initialize its cyclic ESM
+graph. Coverage reports are `coverage/` (core) and `coverage/provider/` (adapter);
+run core coverage first because it cleans its report directory.
+
+`npm run build:plugin -- --backend PATH` builds the archive, and
+`npm run smoke:plugin -- --backend PATH` checks the **extracted archive** through
+the real host loader, temporary SQLite and authenticated localhost API.
+The bounded smoke stops its server, confirms connection refusal and cleans
+its temporary admin/database/volumes. It does not test real game mapping or the
+client GUI. See [provider.md](provider.md) for prerequisites and the observed
+generated-host-asset preparation needed for this checkout.

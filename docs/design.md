@@ -42,3 +42,37 @@ Validate realistic installation, update and removal behavior. Prefer ordinary co
 ## Acceptance
 
 Functional FIRST unit tests, coverage gates, type checking, package build, real low-volume DLsite smoke, and an actual isolated GameVault plugin load and metadata lifecycle test. Add concise evidence without claiming a NAS or GUI test that was not performed.
+
+## Provider implementation decisions (2026-10-17)
+
+- Follow the official `.local/plugins/dlsite` module layout, explicit `.js`
+  imports and default module export. Compile with the host's TypeScript/
+  decorator metadata and use its NestJS/TypeORM instances. Only the accepted
+  standalone core and private JavaScript dependencies are bundled.
+- Automatic matching combines title and filename/version-filename IDs,
+  excluding parent directories; conflicting evidence rejects the match.
+  Manual lookup always honors the supplied provider ID. NC and user-metadata
+  priority stay entirely with GameVault.
+- Confirmed `GameMetadataService.save()` initializes all four relation arrays
+  empty. Use its public `findByProviderSlug` with relations to obtain the
+  same-ID record. Preserve missing/empty optional relations; replace only
+  nonempty supplied groups, with separate topical/series/feature tag groups.
+  Do not use another product's metadata after remapping. Source codes and
+  original-Unicode name hashes give stable provider relation identifiers.
+- Confirmed `MediaService.downloadByUrl` records the source URL and validates
+  actual bytes; it is simpler than manufacturing Multer uploads and an uploader.
+  Reuse unchanged available images. Log and retain valid same-ID images on
+  download failure; without a valid prior image, reject the snapshot before
+  metadata save. Rely on host timeout/format/GC behavior, not a new media system.
+- Three plugin settings only: locale (Japanese default), priority and existing
+  client request interval. Media download pacing remains host-owned.
+- Separate host-aware functional tests include the entire adapter in coverage;
+  they use real Nest module registration/base classes and real client/parsers,
+  with stubs only at persistence/media/network boundaries.
+- Real extracted-archive registration is verified on the isolated 17.0.1 host.
+  Its Nest asset-copy nesting required preparing the existing asset in generated
+  output for startup; no tracked core modifications were made. The bounded
+  harness uses the official loader/AppModule, localhost and a temporary admin.
+  Full persisted lifecycle/update/removal/GUI delivery tests remain separate.
+
+Contracts, commands and mapping details: [provider.md](provider.md).

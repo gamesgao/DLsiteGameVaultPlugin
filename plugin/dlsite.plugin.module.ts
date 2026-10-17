@@ -1,0 +1,24 @@
+import { Module } from "@nestjs/common";
+import type {
+  GameVaultPluginModule,
+  GameVaultPluginModuleMetadataV1,
+} from "../../../src/globals.js";
+import { MediaModule } from "../../../src/modules/media/media.module.js";
+import { MetadataModule } from "../../../src/modules/metadata/metadata.module.js";
+import { DlsiteMetadataProviderService } from "./dlsite.metadata-provider.service.js";
+
+@Module({
+  imports: [MetadataModule, MediaModule],
+  providers: [DlsiteMetadataProviderService],
+})
+export default class DlsitePluginModule implements GameVaultPluginModule {
+  metadata: GameVaultPluginModuleMetadataV1 = {
+    name: "DLsite",
+    author: "gamesgao",
+    version: "0.1.0",
+    description: "ID-first DLsite metadata provider for GameVault.",
+    license: "MIT",
+    website: "https://github.com/gamesgao/DLsiteGameVaultPlugin",
+    keywords: ["metadata", "dlsite"],
+  };
+}

@@ -1,5 +1,96 @@
 # Executed verification
 
+## Component 3: native provider and package — 2026-10-17
+
+Executed with Node.js **v26.7.0**, npm **11.19.0**, pnpm **11.7.0**, TypeScript
+**6.0.3** and the isolated GameVault backend **17.0.1 / `859d71e`** checkout.
+No tracked host/core source was modified. No Docker, NAS, production library,
+real credentials or external server was used.
+
+Run the host-aware commands with `-- --backend /path/to/gamevault-backend`.
+They stage `.local/plugins/dlsite` and use the host's installed compiler and
+dependencies, not a second NestJS/TypeORM installation.
+
+| Command | Executed result |
+| --- | --- |
+| `npm test` | Exit 0; **165 core/client tests** |
+| `npm run test:coverage` | Exit 0; **99.72% lines, 100% functions, 97.37% branches, 99.23% statements** |
+| `npm run typecheck` / `npm run build` | Exit 0; standalone ESM/declarations |
+| `npm run typecheck:provider -- --backend PATH` | Exit 0; staged native code checked with the host types/compiler |
+| `npm run test:provider -- --backend PATH` | Exit 0; **59 native mapper/provider/config tests**, 3 files |
+| `npm run test:provider:coverage -- --backend PATH` | Exit 0; **100% lines/functions/statements, 93.96% branches** across all four adapter files |
+| `npm run build:plugin -- --backend PATH` | Exit 0; host build and plugin-only directory/ZIP |
+| `npm run smoke:plugin -- --backend PATH` | Exit 0; extracted archive loaded and registered through the real host |
+| `npm run format:check` / `git diff --check` | Exit 0 |
+
+The native suite uses real mapper/provider methods, the accepted client and
+parsers, the host MetadataProvider base/entity classes and an actual Nest
+testing module. Stubs are confined to storage/media module boundaries and
+standard fetch. It covers ID/no-ID/conflicts (including version filenames),
+manual ID lookup/forced refresh, native search candidates, field mapping,
+CJK-safe identities, unknown/empty relation groups, same-ID preservation,
+remap isolation, whole-fetch/parse/database failures and image reuse/failures.
+The combined suites pass **224 tests**. Coverage gates remain 90% lines/
+functions/statements and 85% branches; no authored adapter file is excluded.
+
+### Real packaged-host evidence
+
+The archive was extracted to a fresh temporary plugin volume, not imported
+from unit-test source. The harness used the host's real `loadPlugins()` and
+`AppModule`, real SQLite migrations, authentication and provider-list
+controller. It bootstraps Nest directly to bind **only `127.0.0.1`**, unlike
+the host main's default all-interface listener. A generated temporary first
+user was confirmed as ADMIN, logged in through Basic auth, and its bearer
+token was used for:
+
+```text
+GET http://127.0.0.1:56527/api/metadata/providers
+HTTP 200
+```
+
+Relevant actual response:
+
+```json
+{"slug":"dlsite","name":"DLsite","priority":20,"enabled":true}
+```
+
+The response also contained the host's disabled `rawg-legacy` provider. No
+credentials or tokens were printed or retained. The final smoke printed
+`Temporary localhost server stopped.`, verified that the API no longer
+accepted connections, removed temporary runtime volumes/the injected plugin
+copy and exited 0. The script has a 60-second deadline.
+
+Two actual source-host integration details were handled without a core fork:
+
+- Importing MediaModule in isolation hit the host's cyclic-ESM initialization
+  order. Host-aware tests now import AppModule first, matching the official
+  main/plugin-loader sequence.
+- Nest's asset copy produced `dist/assets/assets/ignored-executables.txt`,
+  while ProgressService requires `dist/assets/ignored-executables.txt`. The
+  first startup exposed that ENOENT. The harness prepares the existing host
+  asset in generated output only. After app shutdown the host retained process
+  handles, so the bounded CLI explicitly exits after successful cleanup.
+  The initial failed runtime and lingering validation process were cleaned up.
+
+Artifacts are `artifacts/dlsite/` and `artifacts/dlsite-0.1.0.zip`, ignored by
+git. The archive contains the ESM module/adapter, private core bundle, types,
+documentation and actual bundled dependency license notices, including nested
+versions. The build initially found that npm's boolbase 1.0.0 omits its LICENSE;
+its upstream ISC notice is now retained in THIRD_PARTY_NOTICES and the archive.
+No backend implementation, NestJS, TypeORM, reflect-metadata, test credentials,
+database, artwork or product-page dump is part of the package.
+
+### Remaining delivery acceptance
+
+Registration is the proof completed here, **not** a claim of a finished
+metadata/media lifecycle. The next component must run persisted automatic
+mapping, manual search/remapping, real media saves, refresh-failure preservation
+through host `save()`/merge, user-metadata precedence, restart, update and
+removal against synthetic library archives. GUI/NAS behavior and Node 24 were
+not tested. Live DLsite HTTP evidence remains the component-2 checks below;
+the registration smoke makes no DLsite requests. No commits/pushes or
+code-review agents were used in this component.
+
 ## Component 2: HTTP client — 2026-10-17
 
 Executed locally with Node.js **v26.7.0**, npm **11.19.0**. All commands below

@@ -2,7 +2,7 @@
   "name": "dlsite-gamevault-plugin",
   "version": "0.1.0",
   "private": true,
-  "description": "DLsite metadata core for a native GameVault provider (in development)",
+  "description": "Native DLsite metadata provider for GameVault",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -24,9 +24,14 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
+    "build:plugin": "node scripts/gamevault.mjs build",
+    "typecheck:provider": "node scripts/gamevault.mjs typecheck",
+    "test:provider": "node scripts/gamevault.mjs test",
+    "test:provider:coverage": "node scripts/gamevault.mjs coverage",
+    "smoke:plugin": "node scripts/smoke-plugin.mjs",
     "smoke:dlsite": "node scripts/smoke-dlsite.mjs",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\" \"*.json\" vitest.config.ts",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\" \"*.json\" vitest.config.ts"
+    "format:check": "prettier --check \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\""
   },
   "dependencies": {
     "cheerio": "1.2.0",
@@ -36,6 +41,7 @@
     "@types/node": "24.19.2",
     "@types/turndown": "5.0.6",
     "@vitest/coverage-v8": "5.0.5",
+    "esbuild": "0.28.2",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "vitest": "5.0.5"
