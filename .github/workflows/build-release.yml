@@ -1,0 +1,161 @@
+name: Build and release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build and offline gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BACKEND: ${{ github.workspace }}/.local/gamevault-backend
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact-id: ${{ steps.package.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Read version and check tag
+        id: version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag must equal v$version from package.json"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check out compatible GameVault 17.0.1
+        uses: actions/checkout@v7
+        with:
+          repository: Phalcode/gamevault-backend
+          ref: 859d71ef46f3a1f00a236e5d4c7dbde1eeba02b3
+          path: .local/gamevault-backend
+          persist-credentials: false
+
+      - name: Install native build and host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential python3 zip unzip procps p7zip-full
+
+      - uses: pnpm/setup@v1
+        with:
+          version: "11.7.0"
+          package-json-file: .local/gamevault-backend/package.json
+          install: false
+
+      - name: Install locked dependencies
+        env:
+          SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+        run: |
+          npm ci
+          pnpm --dir "$BACKEND" install --frozen-lockfile
+
+      - name: Format, types and FIRST coverage
+        run: |
+          npm run format:check
+          npm run typecheck
+          npm run test:coverage
+          npm run typecheck:provider -- --backend "$BACKEND"
+          npm run test:provider:coverage -- --backend "$BACKEND"
+
+      - name: Build and load the packaged plugin without DLsite requests
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npm run build:plugin -- --backend "$BACKEND"
+          npm run smoke:plugin -- --backend "$BACKEND" --archive "artifacts/dlsite-$VERSION.zip"
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          unzip -tq "artifacts/dlsite-$VERSION.zip"
+
+      - name: Prepare release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="docs/release-notes-$VERSION.md"
+          if [[ -f "$notes" ]]; then
+            cp "$notes" artifacts/release-notes.md
+          else
+            printf 'DLsiteGameVaultPlugin %s\n\nDownload dlsite-%s.zip and SHA256SUMS. See the [README](%s/%s/blob/%s/README.md) for installation and compatibility.\n' \
+              "$VERSION" "$VERSION" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" \
+              > artifacts/release-notes.md
+          fi
+
+      - name: Retain tested release bundle
+        id: package
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-package
+          path: |
+            artifacts/dlsite-${{ steps.version.outputs.version }}.zip
+            artifacts/SHA256SUMS
+            artifacts/release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  release:
+    name: Publish new tag release
+    needs: build
+    if: >-
+      github.event_name == 'push' &&
+      github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      github.repository == 'gamesgao/DLsiteGameVaultPlugin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Download the exact tested bundle
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: artifacts
+
+      - name: Verify checksum and create release without replacing assets
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          sha256sum --check SHA256SUMS
+          flags=()
+          if [[ "$VERSION" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "dlsite-$VERSION.zip" SHA256SUMS \
+            --verify-tag --title "DLsiteGameVaultPlugin $VERSION" \
+            --notes-file release-notes.md "${flags[@]}"

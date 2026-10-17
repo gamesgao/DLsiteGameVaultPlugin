@@ -8,7 +8,8 @@ account or Playnite installation is required.
 **Compatibility:** tested against GameVault **17.0.1, revision `859d71e`**,
 Node **26.7.0**, SQLite **3.53.4**, on native macOS. This is an ESM plugin for
 the 17.0.1 plugin API, not for older CommonJS hosts. Node 24 LTS is the intended
-build baseline but has not been executed here. Other host revisions,
+CI baseline; its core tests/build pass locally, but full host acceptance on
+Node 24 is still pending. Other host revisions,
 PostgreSQL, Docker, NAS and client GUIs are untested; see
 [verification](docs/verification.md).
 
@@ -164,6 +165,21 @@ ZIPs, a disposable admin, fresh SQLite/volumes and ephemeral localhost ports.
 It checks API mapping, actual saved media, failure preservation, restart,
 replacement and removal, then stops its processes and deletes its runtime.
 No Docker is required. Detailed commands/bounds: [testing](docs/testing.md).
+
+## Automatic builds and releases
+
+[GitHub Actions](.github/workflows/build-release.yml) runs offline tests,
+coverage, type checks, packaging and extracted-plugin registration on branch
+pushes, pull requests and manual dispatch. It targets Ubuntu 24.04 / Node 24
+with the exact compatible GameVault revision above, and retains the tested
+ZIP/checksum bundle and coverage reports for 14 days. Live DLsite E2E remains
+local and opt-in; workflow configuration alone is not a verified runner result.
+
+Only a pushed `vVERSION` tag matching `package.json` can publish, after all
+gates pass, using the exact tested artifact. Manual runs never release, and
+existing releases/assets are not replaced. This CI-only change needs no new
+version or regeneration of `v0.1.0`. See [CI and release instructions](docs/ci.md)
+for first-run acceptance, permissions and future version/tag preparation.
 
 [Design](docs/design.md) · [Original plan](docs/copilot-original-plan.md) ·
 [Core API](docs/core.md) · [Verification](docs/verification.md) ·

@@ -31,8 +31,8 @@
     "smoke:plugin": "node scripts/smoke-plugin.mjs",
     "e2e:host": "node scripts/smoke-plugin.mjs --live",
     "smoke:dlsite": "node scripts/smoke-dlsite.mjs",
-    "format:check": "prettier --check \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\" \".github/workflows/*.yml\"",
+    "format": "prettier --write \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\" \".github/workflows/*.yml\""
   },
   "dependencies": {
     "cheerio": "1.2.0",

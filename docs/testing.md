@@ -100,5 +100,8 @@ Run core coverage **before** provider coverage; the first cleans `coverage/`.
 Do not build the backend concurrently with a host check copying its output.
 Harness scripts are not unit-covered production logic; all `src/` and
 `plugin/` functionality remains covered with unchanged thresholds.
-There is no CI claim. See [provider.md](provider.md) for the generated-asset
-preparation and [verification.md](verification.md) for actual results.
+The [Actions workflow](ci.md) runs the offline coverage/type/build gates and
+packaged registration smoke on Ubuntu / Node 24, not the live lifecycle.
+Workflow configuration does not establish a successful remote run. See
+[provider.md](provider.md) for the generated-asset preparation and
+[verification.md](verification.md) for actual executed results.

@@ -1,5 +1,53 @@
 # Executed verification
 
+## Actions implementation follow-up — 2026-10-17
+
+**Configuration and partial local validation, not a remote Actions result.**
+The new `build-release.yml` targets Ubuntu 24.04 / Node 24 / pnpm 11.7.0 and
+the same exact GameVault revision as the delivery below. No workflow was
+dispatched, tag created, release published/replaced, credential changed or
+repository setting changed by this implementation session. The original
+plan and all functional FIRST tests/coverage thresholds are unchanged.
+
+Local runtime: native macOS arm64, independently downloaded/checksummed
+Node **24.22.0**, npm **11.19.1**, and worktree-local pnpm **11.7.0**.
+Tools/dependencies were confined to ignored worktree directories. The shared
+reference backend's tracked source remained clean.
+
+| Check | Executed result |
+| --- | --- |
+| `npm ci`, `format:check`, `typecheck`, `build` on Node 24 | Passed |
+| `test:coverage` on Node 24 | **165 tests passed**, 4 files |
+| Core coverage, lines/functions/branches/statements | **99.72 / 100 / 97.37 / 99.23%**, unchanged |
+| actionlint **1.7.12** | Passed for the workflow |
+| Standard YAML parser **2.9.0**, `bash -n` | Parsed YAML; all **7** inline shell steps passed syntax checks |
+| Local execution of version/notes steps | Branch and matching tag passed; mismatching tag failed without output; existing release notes copied exactly; missing notes produced the documented fallback |
+| `node --check` for both changed scripts; `git diff --check` | Passed |
+| Action tags and current official documentation | Verified checkout v7, setup-node v7, upload-artifact v7, download-artifact v8 and pnpm/setup v1 exist; reviewed inputs, artifact extraction and `gh release create` refusal of published duplicates |
+
+**Independent coordinating-agent acceptance:** after the implementer's host
+setup was blocked by its non-interactive tool permissions, the coordinator
+reran the changed code against the existing isolated backend on Node **26.7.0**.
+All **165 core/client + 59 provider tests**, both coverage gates, both type
+checks, formatting, version-derived ZIP packaging and checksum passed.
+The newly built package registered exactly **one DLsite provider with zero
+live requests**, then the temporary host and runtime were removed. This is a
+fresh run of the changed scripts, not a reuse of the old release's results.
+The coordinator also independently reran the Node **24.22.0** core coverage,
+typecheck and build successfully. Full host acceptance on Node 24 and Linux
+remains pending. Optional ShellCheck installation was blocked; actionlint,
+YAML parsing and Bash syntax checks above did execute.
+
+**Pending remote acceptance:** a maintainer must push using an authorized
+transport (the reported current `gh` OAuth credential lacks `workflow` scope),
+observe the branch-push run or dispatch the workflow from the default branch,
+and verify all gates, one-provider/zero-live-fetch registration, retained
+artifacts and downloaded checksums. The release job must be skipped for this
+build-only acceptance. Linux native dependency installation, GitHub-hosted
+action execution, artifact transfer and actual release publication remain
+unverified. Do not recreate `v0.1.0` or publish another version for CI-only
+acceptance. Commands and trigger/permission details: [ci.md](ci.md).
+
 ## Component 4: delivery and actual host lifecycle — 2026-10-17
 
 **Executed, not a plan:** native macOS; Node **v26.7.0**, npm **11.19.0**,

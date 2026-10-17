@@ -19,6 +19,9 @@ if (
   );
 }
 const root = resolve(import.meta.dirname, "..");
+const { version } = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+);
 const backend = resolve(values.backend);
 const hostPackage = JSON.parse(
   await readFile(join(backend, "package.json"), "utf8"),
@@ -104,7 +107,7 @@ if (action === "typecheck") {
       JSON.stringify(
         {
           name: "gamevault-dlsite-plugin",
-          version: "0.1.0",
+          version,
           type: "module",
           private: true,
         },
@@ -152,7 +155,8 @@ if (action === "typecheck") {
         }
       }
     }
-    const archive = join(artifacts, "dlsite-0.1.0.zip");
+    const archiveName = `dlsite-${version}.zip`;
+    const archive = join(artifacts, archiveName);
     await rm(archive, { force: true });
     run("zip", ["-Xqr", archive, "dlsite"], artifacts);
     const digest = createHash("sha256")
@@ -160,7 +164,7 @@ if (action === "typecheck") {
       .digest("hex");
     await writeFile(
       join(artifacts, "SHA256SUMS"),
-      `${digest}  dlsite-0.1.0.zip\n`,
+      `${digest}  ${archiveName}\n`,
     );
     console.log(
       `Plugin directory: ${output}\nPlugin archive: ${archive}\nSHA256: ${digest}\nHost: ${hostPackage.version}`,

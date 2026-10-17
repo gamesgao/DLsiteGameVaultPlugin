@@ -28,7 +28,10 @@ assert(
   "Usage: npm run smoke:plugin -- --backend PATH [--archive PATH] [--live]",
 );
 const backend = resolve(values.backend);
-const archive = resolve(values.archive ?? "artifacts/dlsite-0.1.0.zip");
+const { version } = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+const archive = resolve(values.archive ?? `artifacts/dlsite-${version}.zip`);
 const manifest = JSON.parse(await readFile(join(backend, "package.json")));
 assert.equal(manifest.name, "gamevault-backend");
 await access(join(backend, "dist/src/app.module.js"));

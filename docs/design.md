@@ -99,7 +99,18 @@ Functional FIRST unit tests, coverage gates, type checking, package build, real 
   purge or an untested cross-version upgrade.
 - Ship the plugin-root ZIP plus a generated SHA-256 sidecar, readable README,
   bilingual quick-start, mapping/configuration details and license notices.
-  Keep the original plan unchanged. No CI, NAS, GUI, all-locale/all-ID or
-  untested host-version claims; publishing remains the coordinating agent's job.
+  Keep the original plan unchanged. The original delivery did not run CI,
+  NAS, GUI, all-locale/all-ID or other host-version acceptance; publishing
+  remains the coordinating agent's job.
+
+## CI follow-up
+
+One build/release workflow reuses the existing FIRST coverage gates and
+network-free packaged registration smoke. Use Ubuntu / Node 24 with the
+exact compatible backend revision and its locked dependencies. Publish only
+on matching version-tag pushes, after all gates pass, consuming the tested
+artifact without rebuilding. Manual runs only retain artifacts; live E2E
+remains opt-in/local. Do not replace published releases for CI-only changes.
+See [ci.md](ci.md); remote execution evidence is recorded separately.
 
 Contracts, commands and mapping details: [provider.md](provider.md).
