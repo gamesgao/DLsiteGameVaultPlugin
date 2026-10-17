@@ -1,37 +1,145 @@
 # DLsiteGameVaultPlugin
 
-A native DLsite metadata provider for [GameVault](https://gamevau.lt/).
+A native, server-side [GameVault](https://gamevau.lt/) metadata provider for
+DLsite. It matches explicit work IDs in archive filenames, retrieves public
+metadata and saves covers/backgrounds through GameVault. No sidecar, DLsite
+account or Playnite installation is required.
 
-The native provider and plugin package are implemented. An extracted archive
-has loaded and registered on an isolated GameVault 17.0.1 server. This is not
-yet a release: full persisted metadata/media lifecycle and update/removal
-acceptance are the next component.
+**Compatibility:** tested against GameVault **17.0.1, revision `859d71e`**,
+Node **26.7.0**, SQLite **3.53.4**, on native macOS. This is an ESM plugin for
+the 17.0.1 plugin API, not for older CommonJS hosts. Node 24 LTS is the intended
+build baseline but has not been executed here. Other host revisions,
+PostgreSQL, Docker, NAS and client GUIs are untested; see
+[verification](docs/verification.md).
 
-## Goal
+## Install
 
-Recognize DLsite product IDs in game filenames, fetch covers and metadata, and make the results available through GameVault's existing metadata system. Games without an explicit ID can be searched and mapped manually.
+Back up your GameVault database and media first. Plugins execute inside the
+server process; install only code you trust.
 
-- Native TypeScript/NestJS server plugin; no Playnite installation or sidecar service.
-- ID-first matching instead of guessing the first title-search result.
-- Shared server metadata and images using existing GameVault facilities.
-- Readable components, behavior-focused FIRST unit tests, and end-to-end verification.
+1. Download **`dlsite-0.1.0.zip`** and **`SHA256SUMS`** from
+   [Releases](https://github.com/gamesgao/DLsiteGameVaultPlugin/releases).
+   Use the compiled ZIP attachment, **not** GitHub's “Source code” archives.
+   If no release is published yet, build it using the commands below.
+2. Verify the checksum, stop GameVault, and extract into its plugin volume:
 
-## Design and development
+   ```sh
+   shasum -a 256 -c SHA256SUMS
+   unzip dlsite-0.1.0.zip -d /path/to/plugin-volume
+   # Must exist: /path/to/plugin-volume/dlsite/dlsite.plugin.module.js
+   ```
 
-- [Core API and parsing decisions](docs/core.md)
-- [HTTP client API, configuration and refresh behavior](docs/client.md)
-- [Native provider, configuration, build and installation](docs/provider.md)
-- [Executed verification](docs/verification.md)
-- [Current design](docs/design.md)
-- [Component delivery and acceptance](docs/implementation.md)
-- [Testing principles](docs/testing.md)
-- [Original Copilot planning document](docs/copilot-original-plan.md): preserved for provenance; the current design deliberately narrows speculative hardening and excessive abstraction.
-- [Contribution guidelines](CONTRIBUTING.md)
+3. Set the server's `VOLUMES_PLUGINS` to that volume (default `/plugins`) and
+   restart. If using a container, this is the **inside-container** volume path.
+   No `npm install` is needed inside the extracted plugin. The authenticated
+   `GET /api/metadata/providers` must contain exactly one enabled `dlsite`.
 
-### Developer commands
+This follows the [official plugin installation layout](https://gamevau.lt/docs/server-docs/plugins/).
+Do not leave the ZIP unextracted or introduce an extra `dlsite-0.1.0/` wrapper.
+The release root is `dlsite/`, containing the ESM module, adapter, private
+scraper bundle, declarations, documentation and licenses. Host NestJS,
+TypeORM, native binaries and backend implementation are not included.
 
-Use Node.js 24 LTS (or a compatible Node.js 26+ environment) and npm. Run from
-the repository root:
+## Configuration
+
+Optional environment variables on the **server process**, read at startup:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PLUGIN_GAMESGAO_DLSITE_LOCALE` | `ja_JP` | `ja_JP`, `en_US`, `zh_CN`, `zh_TW`; display locale, not automatic translation |
+| `PLUGIN_GAMESGAO_DLSITE_PRIORITY` | `20` | Unique integer provider priority; higher wins, user metadata still wins |
+| `PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS` | `500` | 0–60,000 ms between client requests; host image downloads are separate |
+
+These are not host YAML keys. Japanese is the default because much of the
+catalog is Japanese; changing locale does not translate unavailable fields.
+Only Japanese retrieval for two RJ games has been live verified. Configuration,
+cache, timeout and field details: [provider](docs/provider.md), [client](docs/client.md).
+
+## Normal use and manual mapping
+
+Put your legally obtained archives in the normal GameVault files volume.
+The host indexes them; DLsite uses the filename/title ID rather than guessing:
+
+```text
+RJ141995 (W_P).zip                  -> automatic ID match
+[RJ150726] My Game (W_P).zip         -> automatic ID match
+My Game (W_P).zip                   -> no automatic DLsite match; map manually
+RJ141995 (NC) (W_P).zip              -> host skips automatic metadata refresh
+RJ141995 RJ150726 (W_P).zip          -> conflicting IDs; map manually
+```
+
+`(W_P)` is GameVault's Windows-portable type override; use the correct type
+for your own archive. The plugin does not rename or modify files. Six/eight
+digit RJ, VJ, BJ and RE identity forms are parser-tested, not all live verified.
+
+In GameVault's metadata mapping controls, select **DLsite**, search by title,
+complete ID or work URL, inspect candidates, then select the correct ID.
+Keyword search is manual only, one page per section, and can include non-games.
+For an API client with EDITOR or ADMIN authentication, the actual endpoints are:
+
+```text
+GET /api/metadata/providers/dlsite/search?query=RJ141995
+PUT /api/games/GAME_ID
+Content-Type: application/json
+
+{"mapping_requests":[{"provider_slug":"dlsite","provider_data_id":"RJ141995"}]}
+```
+
+Repeat the mapping to the same ID to fetch fresh metadata; use a different ID
+to remap. Normal reindexing respects GameVault's metadata TTL and `(NC)` policy,
+so it is not a forced refresh. User-entered metadata has priority over provider
+data. Failed fetches do not replace a valid snapshot with an empty result;
+missing optional fields and available same-ID images are retained.
+
+Supported fields: title, Markdown description, date, circle/brand as developer,
+genres, topical tags, 0–100 rating, age, website/gallery links, cover and first
+gallery image as background. No invented publisher. **Series** and **Features**
+become `Series: …` / `Features: …` tags; **Icon** has no native destination.
+The official Playnite integration **does not automatically synchronize this
+server metadata into Playnite**; this plugin does not change that integration.
+
+## Updating, removing and troubleshooting
+
+Stop GameVault before replacing the **whole** `dlsite/` directory. Back up first;
+do not overlay mixed versions. On a persistent source/native deployment, also
+remove only the copied `dist/src/modules/dlsite` directory, or rebuild clean
+host output. The production loader copies plugins there and does **not** remove
+stale copies. Removing only the volume folder can leave the plugin loaded.
+After removal/restart, confirm `dlsite` is absent from the provider list.
+Removal is not a metadata/media purge; later host merges and garbage collection
+remain host-owned. Only same-version replacement has been tested.
+
+| Symptom | Check |
+| --- | --- |
+| DLsite missing, or duplicate registration | Extraction root, plugin volume, ESM-compatible host, stale injected copies, duplicate priority (IGDB normally uses 10); read server startup logs |
+| No automatic match | Explicit unambiguous ID, archive scanned by host, `(NC)`, metadata TTL; use manual mapping |
+| Text stays unchanged | User overrides win; reindex is not forced refresh; map the same ID again |
+| HTTP 403/429, timeout, unavailable product | Check public DLsite reachability from the server; retry later; no login/access-block bypass is provided |
+| Images missing | Reachability of `img.dlsite.jp`, writable media volume, host-supported formats; inspect server media errors |
+| Source-host smoke fails on an asset | The harness prepares the existing `ignored-executables.txt` in **temporary generated output**; see [provider notes](docs/provider.md) |
+
+## 中文快速开始
+
+这是 **GameVault 服务端插件**，不是 Playnite 插件。先备份数据库和媒体目录，
+停止服务，将发布附件 `dlsite-0.1.0.zip` 解压到 `VOLUMES_PLUGINS`，
+确保存在 `dlsite/dlsite.plugin.module.js`，然后重启。不要直接放 ZIP，
+也不要下载 GitHub 的源码压缩包当成插件安装。
+
+文件名包含明确的 `RJ141995` 等作品 ID 时自动匹配；没有 ID 的游戏请在
+元数据映射中选择 DLsite，搜索名称/ID/作品网址并手动确认。`(NC)` 保持
+GameVault 原有的跳过自动刷新行为。默认语言是日语 `ja_JP`；可设置
+`PLUGIN_GAMESGAO_DLSITE_LOCALE=zh_CN`，但不保证所有字段有中文。
+手工填写的数据优先；Series/Features 保存为标签，Icon 无对应字段。
+官方 Playnite 集成不会自动同步这里的服务端元数据。
+本次仅验证本机隔离后端和公开网页，**没有访问 NAS 或真实游戏库**。
+
+## Build and local gates
+
+Run these commands from a **source checkout of this repository**, not the
+extracted plugin. Use npm and a disposable compatible backend checkout with
+its pnpm dependencies already installed. `zip`, `unzip` and `ps` are required for packaging/native
+acceptance. Do not point the build at a running production checkout: it stages
+`.local/plugins/dlsite` and replaces the host's generated `dist`.
 
 ```sh
 npm ci
@@ -39,57 +147,33 @@ npm test
 npm run test:coverage
 npm run typecheck
 npm run build
+BACKEND=/path/to/disposable/gamevault-backend
+npm run typecheck:provider -- --backend "$BACKEND"
+npm run test:provider -- --backend "$BACKEND"
+npm run test:provider:coverage -- --backend "$BACKEND"
+npm run format:check
+npm run build:plugin -- --backend "$BACKEND"
+npm run smoke:plugin -- --backend "$BACKEND"  # registration, no DLsite retrieval
+npm run e2e:host -- --backend "$BACKEND"      # opt-in real live lifecycle
+npm run smoke:dlsite                         # opt-in bounded client-only live check
 ```
 
-`npm run format:check` checks TypeScript/config/script formatting; `npm run format`
-applies it. Dependencies are locked in `package-lock.json`. Tests are offline
-and use synthetic fixtures, with coverage gates described in
-[docs/testing.md](docs/testing.md).
+The archive and checksum are in `artifacts/`. Unit suites are offline, with
+separate full core/adapter coverage gates. Host E2E uses three tiny synthetic
+ZIPs, a disposable admin, fresh SQLite/volumes and ephemeral localhost ports.
+It checks API mapping, actual saved media, failure preservation, restart,
+replacement and removal, then stops its processes and deletes its runtime.
+No Docker is required. Detailed commands/bounds: [testing](docs/testing.md).
 
-`npm run build` emits the standalone identity/parsing library and HTTP client
-in `dist/`, with ESM JavaScript and TypeScript declarations. After building, the opt-in
-`npm run smoke:dlsite` checks two real public games, title search and a cover;
-it is never run by the offline unit suite.
+[Design](docs/design.md) · [Original plan](docs/copilot-original-plan.md) ·
+[Core API](docs/core.md) · [Verification](docs/verification.md) ·
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
-### Build and install the native plugin
+## License
 
-Use a disposable compatible GameVault source checkout with its pnpm dependencies
-installed. The script stages `.local/plugins/dlsite`, runs the host build, and
-packages only the plugin plus private scraper dependencies:
-
-```sh
-npm run typecheck:provider -- --backend /path/to/gamevault-backend
-npm run test:provider -- --backend /path/to/gamevault-backend
-npm run test:provider:coverage -- --backend /path/to/gamevault-backend
-npm run build:plugin -- --backend /path/to/gamevault-backend
-npm run smoke:plugin -- --backend /path/to/gamevault-backend
-```
-
-Stop the destination server and extract `artifacts/dlsite-0.1.0.zip` into its
-plugin volume:
-
-```sh
-unzip artifacts/dlsite-0.1.0.zip -d /path/to/plugin-volume
-```
-
-Restart GameVault with that volume configured as `VOLUMES_PLUGINS`. The
-authenticated `GET /api/metadata/providers` should list `dlsite`.
-Optional server environment configuration:
-
-```sh
-PLUGIN_GAMESGAO_DLSITE_LOCALE=ja_JP
-PLUGIN_GAMESGAO_DLSITE_PRIORITY=20
-PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS=500
-```
-
-Automatic matching requires an unambiguous work ID in the title/filename.
-Keyword and work-URL searches support manual mapping. NC handling and user
-metadata precedence are unchanged. See [provider.md](docs/provider.md) for
-supported locales, field/refresh semantics, separate adapter coverage,
-host image limitations and complete installation/removal guidance.
-
-## Credits and license
-
-Plugin-owned code is MIT licensed. DLsite parsing rules are informed by [Mysterken/DLsiteMetadata](https://github.com/Mysterken/DLsiteMetadata), also MIT licensed. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-GameVault is a separate source-available project with its own license; this repository does not relicense or redistribute its backend. DLsite product descriptions and artwork retain their respective rights. This plugin does not download game binaries or bypass purchase requirements.
+Plugin-owned code is MIT licensed. Parsing rules are informed by
+[Mysterken/DLsiteMetadata](https://github.com/Mysterken/DLsiteMetadata) (MIT);
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). GameVault is a separate
+source-available project, not redistributed or relicensed here. DLsite artwork
+and descriptions retain their respective rights. No game binaries, purchase
+bypass, full product-page dumps or artwork are shipped.

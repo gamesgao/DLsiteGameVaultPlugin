@@ -95,7 +95,7 @@ Japanese/Chinese year-month-day text (with optional hour), English `Feb/29/2024`
 numeric `03/02/2024` remain unknown. This is not a claim of support for all
 DLsite locales.
 
-## Search and next-component boundary
+## Search and integration boundary
 
 Search uses the reference plugin's `.work_1col_table.n_worklist` rows,
 `.work_name a` links and `.work_text` excerpts. An existing empty list is a valid

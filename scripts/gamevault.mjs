@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { parseArgs } from "node:util";
@@ -83,12 +84,20 @@ if (action === "typecheck") {
     await rm(output, { recursive: true, force: true });
     await mkdir(output, { recursive: true });
     await cp(compiled, output, { recursive: true });
-    for (const file of ["LICENSE", "THIRD_PARTY_NOTICES.md"]) {
+    for (const file of [
+      "README.md",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "CHANGELOG.md",
+      "CONTRIBUTING.md",
+    ]) {
       await cp(join(root, file), join(output, file));
     }
-    await cp(join(root, "docs/provider.md"), join(output, "README.md"));
-    for (const file of ["client.md", "verification.md"]) {
-      await cp(join(root, "docs", file), join(output, file));
+    await mkdir(join(output, "docs"));
+    for (const file of await readdir(join(root, "docs"))) {
+      if (file.endsWith(".md")) {
+        await cp(join(root, "docs", file), join(output, "docs", file));
+      }
     }
     await writeFile(
       join(output, "package.json"),
@@ -145,9 +154,16 @@ if (action === "typecheck") {
     }
     const archive = join(artifacts, "dlsite-0.1.0.zip");
     await rm(archive, { force: true });
-    run("zip", ["-qr", archive, "dlsite"], artifacts);
+    run("zip", ["-Xqr", archive, "dlsite"], artifacts);
+    const digest = createHash("sha256")
+      .update(await readFile(archive))
+      .digest("hex");
+    await writeFile(
+      join(artifacts, "SHA256SUMS"),
+      `${digest}  dlsite-0.1.0.zip\n`,
+    );
     console.log(
-      `Plugin directory: ${output}\nPlugin archive: ${archive}\nHost: ${hostPackage.version}`,
+      `Plugin directory: ${output}\nPlugin archive: ${archive}\nSHA256: ${digest}\nHost: ${hostPackage.version}`,
     );
   }
 }

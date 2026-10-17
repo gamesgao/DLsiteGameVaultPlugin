@@ -1,5 +1,187 @@
 # Executed verification
 
+## Component 4: delivery and actual host lifecycle — 2026-10-17
+
+**Executed, not a plan:** native macOS; Node **v26.7.0**, npm **11.19.0**,
+TypeScript **6.0.3**; GameVault **17.0.1** at
+**`859d71ef46f3a1f00a236e5d4c7dbde1eeba02b3`**; actual SQLite engine
+**3.53.4** queried from the running host. The backend's package-manager pin
+used pnpm **11.7.0** (the outer shell's pnpm launcher reports 11.3.0).
+The isolated backend's tracked worktree remained clean. No Docker, NAS,
+`/Volumes`, real library, personal credentials or global configuration/proxy
+changes. All test hosts and descendants were stopped; temporary databases,
+admins, archives and downloaded media were deleted.
+
+### Reproduce from the repository root
+
+Supply a disposable checkout of that backend revision with its dependencies
+already installed and a working native SQLite binding. Do not run the host
+copy step concurrently with a backend rebuild.
+
+```sh
+BACKEND=/path/to/disposable/gamevault-backend
+npm test
+npm run test:coverage
+npm run typecheck
+npm run build
+npm run typecheck:provider -- --backend "$BACKEND"
+npm run test:provider -- --backend "$BACKEND"
+npm run test:provider:coverage -- --backend "$BACKEND"
+npm run format:check
+npm run build:plugin -- --backend "$BACKEND"
+npm run smoke:plugin -- --backend "$BACKEND"
+npm run e2e:host -- --backend "$BACKEND"
+npm run smoke:dlsite
+(cd artifacts && shasum -a 256 -c SHA256SUMS)
+unzip -tq artifacts/dlsite-0.1.0.zip
+git diff --check
+```
+
+`npm ci` is the prerequisite on a fresh plugin checkout, not part of each test
+run. `e2e:host` accepts `--archive /absolute/path/to/dlsite-0.1.0.zip` to test a
+downloaded release asset. Neither live check runs in the unit suites.
+
+| Gate | Actual result |
+| --- | --- |
+| `npm test`, `npm run test:coverage` | Exit 0, **165 tests**, 4 files |
+| Core/client coverage | **99.72% lines, 100% functions, 97.37% branches, 99.23% statements** |
+| `npm run typecheck`, `npm run build` | Exit 0 |
+| `typecheck:provider` | Exit 0 using the host's compiler/types |
+| `test:provider`, `test:provider:coverage` | Exit 0, **59 tests**, 3 files |
+| Adapter coverage | **100% lines/functions/statements, 93.96% branches** |
+| `format:check`, `git diff --check` | Exit 0 |
+| `build:plugin` | Exit 0, plugin-root ZIP and `SHA256SUMS` |
+| `smoke:plugin` | Exit 0, extracted production package, exactly one DLsite; **zero live retrievals** |
+| `e2e:host` | Exit 0, all lifecycle phases below; **20 real outbound fetch responses**, **4 injected failed attempts** |
+| `smoke:dlsite` | Exit 0, **10 real HTTP responses**, no supplemental warnings |
+| ZIP integrity / checksum | Passed; digest is generated in `artifacts/SHA256SUMS` and printed by build/E2E |
+
+Combined offline suite: **224 tests**. Gates remain 90% lines/functions/
+statements and 85% branches for both core and adapter. No functional code was
+excluded, no threshold lowered. Delivery changes are the executable acceptance/
+packaging scripts and documentation; no demonstrated provider/core functional
+defect required a production workaround.
+
+### Actual packaged-host API and persistence evidence
+
+The harness copied compiled host output into a fresh temporary production
+layout, linked the host's installed dependencies, extracted the ZIP into its
+plugin volume and called the **real production loader and AppModule**.
+It did not import plugin test source, insert database game records, patch
+controllers, or fabricate successful network responses. The worker bootstrap
+uses the real validation pipe/controllers/services with `127.0.0.1:0` instead
+of official `main.js`'s all-interface listener.
+
+Every startup used an ephemeral localhost port. Unauthenticated
+`GET /api/metadata/providers` returned **401**. Actual
+`POST /api/auth/basic/register` returned **201**, role **3 / ADMIN**;
+Basic login returned **200** and a bearer token used for the remaining APIs.
+The authenticated provider list contained exactly:
+
+```json
+{"slug":"dlsite","name":"DLsite","priority":20,"enabled":true}
+```
+
+The host's disabled `rawg-legacy` was also present. No credentials/tokens were
+printed or retained.
+
+| Lifecycle operation | Observed and asserted |
+| --- | --- |
+| Startup filesystem index | Three ZIPs, containing only an invented text file, became actual game/version records |
+| `03 RJ141995 (W_P).zip` | Automatically mapped to RJ141995; saved source and effective metadata agreed |
+| `01 Manual Example (W_P).zip` | Indexed, but no guessed DLsite mapping |
+| `02 RJ150726 Skip (NC) (W_P).zip` | Indexed, but host skipped automatic metadata |
+| `PUT /api/games/reindex` | 200, empty body; NC/no-ID remained unmapped, fresh mapping caused no extra requests |
+| Keyword provider search for `東方紅輝心` | 200; four real DLsite search sections, correct RJ141995 candidate |
+| `PUT /api/games/:id` mapping requests | No-ID entry manually mapped to RJ141995, reused saved images, then remapped to RJ150726 with that work's own circle/images |
+| Same-ID mapping/refresh | Fresh home redirect, maniax HTML and AJAX fetched again; saved source ID/fields/media retained |
+| `user_metadata` update | Effective title `Synthetic user title`, rating **42**, tag `User tag` survived provider refresh; DLsite source retained its real title/rating/tags |
+| Injected transport failure, same ID | API 500 with a network/DLsite error; complete saved game unchanged |
+| Injected transport failure, different ID | API 500; previous mapping, relations, user metadata and images unchanged |
+| Real process restart | Exactly one DLsite, same source work IDs/fields, user values and media hashes; no new outbound retrieval |
+| Whole-directory same-version replacement | Extracted archive loaded again with the same persisted results; no new retrieval |
+| Removal | Volume folder deletion left the host's injected copy present; deleting that copy too and restarting yielded zero DLsite providers; saved source/media still readable |
+| Shutdown/cleanup | Each process/descendant stopped; API connection refusal checked; all owned runtime files deleted |
+
+No-ID/NC assertions use real indexed records, not synthetic database inserts.
+Refresh failure injection only throws at the fetch boundary after the live
+snapshots are saved; it is **not** a real observed DLsite outage or a successful
+fixture masquerading as live retrieval. Two requests with one retry each
+account for the four injected failures. Persistence and API behavior remain
+real during that phase.
+
+### Public fields and actual image bytes
+
+| Work | Saved title | Date | Circle/developer | Genre | Score |
+| --- | --- | --- | --- | --- | --- |
+| RJ141995 | 東方紅輝心 | 2014-09-23 | あんかけスパ | アクション | 94 |
+| RJ150726 | もんむす・くえすと! ぱらどっくすRPG前章 | 2015-03-14 | とろとろレジスタンス | ロールプレイング | 96 |
+
+RJ141995 saved tags: `3D作品`, `Features: アプリケーション`,
+`Features: 音楽あり`. RJ150726 saved tags: `逆レ`, `逆転無し`,
+`Series: もんむす・くえすと！`, `Features: アプリケーション`,
+`Features: 音楽あり`. Both saved nonempty Markdown descriptions, canonical
+provider URLs and real release dates. Dates were persisted at midnight UTC;
+ratings were not multiplied a second time.
+
+RJ141995 work/AJAX returned **200**. RJ150726 lookup returned **301 → maniax**,
+then page/AJAX **200**. All home/maniax/soft/pro keyword searches returned
+**200**. The four `img.dlsite.jp` requests returned **200** and were validated/
+persisted by the actual host MediaService as **image/jpeg**, not just saved URLs:
+
+| Work/media | Bytes | SHA-256 of file and authenticated `/api/media/:id` response |
+| --- | ---: | --- |
+| RJ141995 cover | 240,521 | `2898c2888b875aa04e8aeb2339c255464951951d4721789ddf5cff4fa3eb2153` |
+| RJ141995 first sample/background | 131,439 | `8aa1321dd8172d5cd2fd69fce503c031074ae08c672f15c09bb36ff86724e80e` |
+| RJ150726 cover | 207,207 | `eaf5795cb7da234b095b76e68427c2f38978bef8d84406ca31e8f48a3d658790` |
+| RJ150726 first sample/background | 188,202 | `b4dbd536c91751d879c8228e55e7c9a59f9c5e327ce2aa4cc76d148f93c3873d` |
+
+The actual file paths were inside the temporary media volume, source URLs
+remained on `https://img.dlsite.jp`, JPEG magic bytes were checked, and served
+bytes equalled file bytes. IDs, source URLs and hashes survived restart and
+replacement without redownload. Artwork and HTML were not retained as fixtures
+or packaged. The standalone live smoke separately downloaded the 207,207-byte
+cover without writing it to disk.
+
+### Package, harness corrections and limits
+
+`artifacts/dlsite-0.1.0.zip` extracts to the single `dlsite/` plugin root.
+Contents were inspected: compiled ESM adapter/declarations/maps, private
+core/scraper JavaScript bundle, Markdown documentation/changelog, MIT license
+and bundled dependency notices. Host NestJS/TypeORM/reflect-metadata are
+external imports, not duplicate runtime copies. No backend source, native
+binary/runtime, `node_modules`, credentials, DB, real full HTML pages, game
+payloads or artwork are included. The same final ZIP is the input to production
+load/lifecycle acceptance; `SHA256SUMS` identifies the exact built bytes.
+Rebuilding may change ZIP timestamps/digest; check the sidecar for that build.
+
+Early harness runs correctly failed on three test assumptions: parsing the
+reindex endpoint's empty 200 response as JSON; expecting an unchanged TypeORM
+upsert to advance `updated_at`; and comparing host startup cascade-save update
+counters as though they were user values. Inspection of the actual public host
+path resolved these: assert reindex status, assert real fresh page/JSON requests
+and persisted fields, and compare all user data except `updated_at`/
+`entity_version` across restart. Failure-preservation comparisons still check
+the **complete game**, including counters. No provider defect was hidden or
+host code patched; failed runs also stopped and cleaned their hosts.
+
+The existing host asset-copy mismatch is handled only in temporary generated
+output, as documented below. The harness has a 300-second deadline, a 48-fetch
+budget, and bounded child shutdown. It uses a transparent fetch observer plus
+the explicit failure phase; host media redirects remain host-owned.
+
+**Not tested:** real NAS/libraries/credentials; Docker; Linux/Windows deployment;
+PostgreSQL; Node 24; GameVault GUI or Playnite UI; historical/CommonJS hosts or
+other backend revisions; every ID prefix/locale/work category; actual 30-day
+TTL expiration; large-library performance; cross-version plugin upgrade or
+media garbage collection after removal. Same-version replacement is not an
+upgrade-migration claim. Official Playnite does not automatically synchronize
+these server metadata. There is no CI/workflow-run claim. No commit, push, tag
+or release was made by this delivery session.
+
+The earlier component results below are historical evidence; their then-pending
+lifecycle boundary is superseded by the component-4 results above.
+
 ## Component 3: native provider and package — 2026-10-17
 
 Executed with Node.js **v26.7.0**, npm **11.19.0**, pnpm **11.7.0**, TypeScript

@@ -47,7 +47,22 @@ GET /api/metadata/providers/dlsite/search?query=<URL-encoded-title-or-work-URL>
 ```
 
 The plugin adds no controller or alternate map endpoint. Use GameVault's
-existing mapping UI/API with provider `dlsite` and the returned work ID.
+existing mapping UI/API with provider `dlsite` and the returned work ID:
+
+```http
+PUT /api/games/GAME_ID
+Authorization: Bearer <your-access-token>
+Content-Type: application/json
+
+{"mapping_requests":[{"provider_slug":"dlsite","provider_data_id":"RJ141995"}]}
+```
+
+Use a separate `PUT` with `{"user_metadata":{"title":"My title"}}` to set an
+override. The same-ID mapping request forces a fresh fetch; a different ID
+remaps. `PUT /api/games/reindex` indexes files but respects host metadata TTL
+(default 30 days), so it does not force fresh retrieval. In 17.0.1 it returns
+HTTP 200 with an empty body. `(NC)` skips automatic queue refresh, not an
+explicit manual mapping request. API behavior is tested; GUI controls are not.
 
 ## Mapping and refresh
 
@@ -116,9 +131,10 @@ npm ci
 npm run build:plugin -- --backend /path/to/gamevault-backend
 ```
 
-Output: `artifacts/dlsite/` and `artifacts/dlsite-0.1.0.zip`. The directory has
+Output: `artifacts/dlsite/`, `artifacts/dlsite-0.1.0.zip` and
+`artifacts/SHA256SUMS`. The directory has
 `dlsite.plugin.module.js`, native ESM adapter files, a private core/scraper
-bundle, declarations, license notices and this installation guide. Only
+bundle, declarations, license notices, README, changelog and `docs/`. Only
 private pure-JS dependencies are bundled; the host TypeScript compiler emits
 decorator metadata using its own installed NestJS and entity types.
 
@@ -126,7 +142,9 @@ Stop the destination server; extract the archive into its configured plugin
 volume (default `/plugins`):
 
 ```sh
-unzip artifacts/dlsite-0.1.0.zip -d /path/to/plugin-volume
+cd artifacts
+shasum -a 256 -c SHA256SUMS
+unzip dlsite-0.1.0.zip -d /path/to/plugin-volume
 # Result: /path/to/plugin-volume/dlsite/dlsite.plugin.module.js
 ```
 
@@ -137,9 +155,18 @@ Check the authenticated provider-list API for `dlsite`.
 
 The production loader copies plugins into `dist/src/modules`. To update,
 replace the complete `dlsite` folder while stopped, not a mix of old/new files.
-For removal on a persistent source installation, also remove the copied
+For updating or removal on a persistent source installation, also remove the copied
 `dist/src/modules/dlsite` directory (or rebuild clean host output). Do not
-remove the host's shared modules or dependency directories.
+remove the host's shared modules or dependency directories. The loader does
+not delete stale injected files. Same-version replacement was verified, not a
+migration between two released versions. Removal stops the provider but does
+not purge saved source metadata/media; later host merge/GC behavior still applies.
+
+The verified host is **17.0.1 at `859d71ef46f3a1f00a236e5d4c7dbde1eeba02b3`**.
+Do not treat the version string alone as a guarantee for every upstream build:
+native plugins depend on host imports and types. Rebuild and run the opt-in
+host check when changing backend revisions. Official plugin guidance was
+checked against the public documentation on 2026-10-17.
 
 ## Tests and evidence boundary
 
@@ -153,6 +180,7 @@ npm run test:provider -- --backend /path/to/gamevault-backend
 npm run test:provider:coverage -- --backend /path/to/gamevault-backend
 npm run build:plugin -- --backend /path/to/gamevault-backend
 npm run smoke:plugin -- --backend /path/to/gamevault-backend
+npm run e2e:host -- --backend /path/to/gamevault-backend
 ```
 
 Provider tests use the separate `vitest.provider.config.ts`, real provider,
@@ -164,24 +192,51 @@ transform emits decorator metadata. Adapter coverage includes **every**
 branches gates as the core. Default core tests do not silently stand in for
 these host-aware tests.
 
-`smoke:plugin` extracts the ZIP into a fresh OS-temporary plugin volume, uses
-the real production plugin loader and AppModule, migrates a fresh SQLite DB,
-registers/logs in a temporary first-user admin, and checks the authenticated
-provider-list API. It binds only `127.0.0.1` on an ephemeral port, has a
-60-second deadline, closes the server and verifies connection refusal, then
-deletes its runtime volumes and injected plugin copy. Credentials are never
-printed. The host checkout must be disposable and already built; no extra
-plugins may be present in its production injection directory.
+`smoke:plugin` extracts the ZIP into a fresh OS-temporary plugin volume and
+copies **built host output** into a clean temporary production layout, linking
+only the host's installed dependencies. It uses the actual production loader/
+AppModule, SQLite migrations, first-user ADMIN registration, Basic login and
+bearer authentication. It asserts unauthenticated access is rejected and the
+provider list contains exactly one `dlsite`. This mode does not retrieve DLsite.
+
+`e2e:host` runs that same harness with `--live`. Three real ZIPs contain only
+an invented text file; `(W_P)` avoids unnecessary executable inspection. The
+host's real filesystem indexer creates the records, not SQL inserts or mocked
+controllers. Authenticated API checks cover automatic ID mapping, NC/no-ID
+policy, keyword search/manual remap, real metadata and on-disk media bytes,
+same-ID forced refresh, user priority, restart, replacement and removal.
+
+The worker observes real outbound fetch responses without rewriting them.
+A clearly marked, separate failure phase injects transport exceptions only:
+same-ID refresh and different-ID remap both return 500 and preserve the complete
+saved game. It does not fabricate successful HTML, JSON or media responses.
+The normal unit fixtures remain separate from live acceptance.
+
+Both modes bind **only `127.0.0.1`**, use ephemeral ports, have a 300-second
+overall deadline and a 5-second shutdown allowance, and clean up on errors/
+interrupts as well as success. Live mode permits at most 48 outbound fetch
+attempts (the observed run used 20; host media redirects are host-owned).
+Children use an isolated environment, no inherited host credentials/`.env`,
+and only temporary DB/volumes. The parent stops each worker and its descendants,
+verifies connection refusal and removes its runtime. Credentials/tokens are
+not printed. Supply a disposable built host without extra injected plugins.
+The harness itself does not modify that checkout.
 
 The inspected host's Nest build copies `ignored-executables.txt` into
 `dist/assets/assets/`, while ProgressService reads `dist/assets/`. The smoke
-setup copies this existing host asset to the required **generated** path.
+setup copies this existing host asset to the required **temporary generated** path.
 No tracked upstream source/config is patched, and host assets are not shipped
 in the plugin archive. Tests initialize the host AppModule before plugin
 imports, matching the official loader and avoiding host cyclic-ESM import
 order errors.
 
-See [verification.md](verification.md) for actual executed results. Registration
-is not full lifecycle acceptance: persisted mapping/remapping, failure
-preservation across host saves/restarts, updates/removal and client GUI behavior
-still require the next delivery component.
+An unchanged host TypeORM upsert need not advance the provider's `updated_at`;
+the E2E verifies fresh outbound page/JSON retrieval and persisted fields rather
+than treating that timestamp as a refresh counter. Startup cascade saves can
+also advance user metadata update counters without changing user values.
+No host fork or provider workaround was added for these behaviors.
+
+See [verification.md](verification.md) for executed results. Client GUI, NAS,
+other databases/platforms, Node 24 and real cross-version upgrades remain
+untested. The official Playnite integration does not automatically synchronize
+these server metadata fields.

@@ -73,6 +73,33 @@ Functional FIRST unit tests, coverage gates, type checking, package build, real 
   Its Nest asset-copy nesting required preparing the existing asset in generated
   output for startup; no tracked core modifications were made. The bounded
   harness uses the official loader/AppModule, localhost and a temporary admin.
-  Full persisted lifecycle/update/removal/GUI delivery tests remain separate.
+  The subsequent delivery acceptance below extends this to persisted lifecycle.
+
+## Delivery decisions (2026-10-17)
+
+- Extend the existing host smoke with opt-in `--live` rather than introduce a
+  test orchestration framework. A small child bootstrap allows real process
+  restarts, a loopback-only listener and bounded shutdown despite host watcher
+  handles. Copy built host output to a temporary production layout; reuse host
+  dependencies without modifying its tracked files or injecting into its checkout.
+- Index real synthetic ZIP archives through the real host filesystem scanner;
+  authenticate a disposable admin and use existing public APIs for all mapping
+  and user edits. No hand-authored DB records or fabricated successful responses.
+  Read-only SQLite version reporting identifies the actual database engine.
+- Live success covers two Japanese RJ works and four actual saved JPEG files.
+  A separate, clearly labelled fetch-exception phase verifies saved failure
+  preservation through the actual API/save/merge path.
+- Preserve and verify provider data IDs, fields, user overrides, media source
+  URLs and byte hashes across fresh processes and whole-directory same-version
+  replacement. Do not equate unchanged-upsert timestamps with a refresh event,
+  or host user-metadata update counters with changes to user values.
+- The production loader leaves injected files behind. Document removal of both
+  the volume folder and its copied generated directory on persistent hosts;
+  verify zero registered DLsite providers without promising a database/media
+  purge or an untested cross-version upgrade.
+- Ship the plugin-root ZIP plus a generated SHA-256 sidecar, readable README,
+  bilingual quick-start, mapping/configuration details and license notices.
+  Keep the original plan unchanged. No CI, NAS, GUI, all-locale/all-ID or
+  untested host-version claims; publishing remains the coordinating agent's job.
 
 Contracts, commands and mapping details: [provider.md](provider.md).

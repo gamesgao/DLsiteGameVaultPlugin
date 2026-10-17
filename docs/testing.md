@@ -46,10 +46,59 @@ AppModule is imported first, like its real main, to initialize its cyclic ESM
 graph. Coverage reports are `coverage/` (core) and `coverage/provider/` (adapter);
 run core coverage first because it cleans its report directory.
 
-`npm run build:plugin -- --backend PATH` builds the archive, and
+`npm run build:plugin -- --backend PATH` builds the archive/checksum, and
 `npm run smoke:plugin -- --backend PATH` checks the **extracted archive** through
 the real host loader, temporary SQLite and authenticated localhost API.
-The bounded smoke stops its server, confirms connection refusal and cleans
-its temporary admin/database/volumes. It does not test real game mapping or the
-client GUI. See [provider.md](provider.md) for prerequisites and the observed
-generated-host-asset preparation needed for this checkout.
+This default mode is registration-only, with no DLsite retrieval.
+
+## Opt-in native host lifecycle
+
+After building the plugin, from the repository root:
+
+```sh
+npm run e2e:host -- --backend /path/to/disposable/gamevault-backend
+# Optional: verify a specific release asset rather than the default artifact.
+npm run e2e:host -- --backend /path/to/disposable/gamevault-backend --archive /path/to/dlsite-0.1.0.zip
+```
+
+Requirements: a built compatible backend with its own installed dependencies
+(including functional SQLite native binding), Node, `zip`, `unzip`, `ps`, and
+public DLsite/image-host reachability. No Docker, browser or game binaries.
+Use macOS/Linux-style native tooling; Windows execution has not been tested.
+The script does not install dependencies or alter global proxy/configuration.
+
+The harness copies host `dist` into its own OS-temporary production layout,
+symlinks host dependencies, extracts the actual ZIP and boots the real loader/
+AppModule in a child process. It does not import plugin test sources or edit
+tracked host code. A temporary first-user admin uses real API authentication.
+The worker is a minimal localhost bootstrap, not the all-interface official
+`main.js` listener; Nest validation, controllers, services, indexer, DB and
+media implementation are real.
+
+Three synthetic archives exercise ID auto-indexing, no-ID manual selection,
+and `(NC)`. Assertions cover saved source/effective title, date, circle,
+genres/tags/rating, actual JPEG files served byte-for-byte by the media API,
+four-section keyword search, same/different-ID mapping, user title/rating/tag
+priority, fresh-metadata reindex, restart, same-version replacement and removal.
+Image IDs, source URLs and SHA-256 remain unchanged across restart/replacement.
+Actual expiration of the 30-day host TTL is not timed out in this short test.
+
+After live success, an explicit failure-only phase injects standard fetch
+transport exceptions for DLsite, **not successful fixtures**. Both refresh and
+remap must return 500 with a meaningful error and leave the entire previously
+saved source/user/merged game unchanged. This is deterministic failure
+evidence, not a claim of observing a real DLsite outage.
+
+Overall deadline: 300 seconds plus up to 5 seconds for worker shutdown.
+Poll waits: 90 seconds. Live budget: 48 outbound fetch attempts; normal observed
+run: 20. Native media redirects remain host-owned. Each worker and descendants
+are stopped, connection refusal is checked, and temporary credentials, SQLite,
+volumes/media/ZIPs are deleted on success, error or handled interrupt.
+SIGKILL/power loss cannot run JavaScript cleanup.
+
+Run core coverage **before** provider coverage; the first cleans `coverage/`.
+Do not build the backend concurrently with a host check copying its output.
+Harness scripts are not unit-covered production logic; all `src/` and
+`plugin/` functionality remains covered with unchanged thresholds.
+There is no CI claim. See [provider.md](provider.md) for the generated-asset
+preparation and [verification.md](verification.md) for actual results.
