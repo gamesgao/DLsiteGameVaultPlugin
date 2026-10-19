@@ -9,8 +9,10 @@ account or Playnite installation is required.
 Node **26.7.0**, SQLite **3.53.4**, on native macOS. This is an ESM plugin for
 the 17.0.1 plugin API, not for older CommonJS hosts. Version **0.2.0** adds a
 plugin-scoped HTTP(S) proxy and an environment-prefix migration. Its local
-acceptance uses synthetic HTTPS/CONNECT fixtures, not live DLsite.
-Historical 0.1.0 hosted Ubuntu / Node 24 results are recorded separately. Other host revisions,
+acceptance uses synthetic HTTPS/CONNECT fixtures, not live DLsite. The same
+244 tests and proxy/media lifecycle also passed on GitHub-hosted Ubuntu 24.04 /
+Node 24.21.0 in [run 39185840810](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39185840810).
+Other host revisions,
 PostgreSQL, Docker, NAS and client GUIs are untested; see
 [verification](docs/verification.md).
 

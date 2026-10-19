@@ -7,6 +7,11 @@ still a separate maintainer-owned matching-tag action.
 
 ## Triggers and gates
 
+The 0.2.0 proxy/media gates have passed on a real hosted runner:
+[run 39185840810](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39185840810).
+All 244 tests, HTTP/HTTPS proxy smoke, packaged-host lifecycle and artifact
+verification succeeded. Historical first-run notes below refer to 0.1.0.
+
 Every branch push, pull request and manual `workflow_dispatch` runs the same
 build. A `v*` tag push also runs it, but any tag must equal `v` followed by the
 checked-out `package.json` version. A mismatch fails before dependency install.

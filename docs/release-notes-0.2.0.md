@@ -1,7 +1,6 @@
 # DLsiteGameVaultPlugin 0.2.0
 
-Prepared for maintainer publication; this implementation does not create a
-tag, release or hosted-CI result. Install `dlsite-0.2.0.zip` with its matching
+Install `dlsite-0.2.0.zip` with its matching
 `SHA256SUMS`, not a source archive. Target: GameVault 17.0.1 / `859d71e`.
 
 ## Required environment migration
@@ -18,7 +17,7 @@ There are no legacy aliases; leaving old names silently results in the normal
 defaults because they are no longer read. Users without explicit variables
 need no configuration migration. GameVault's `VOLUMES_PLUGINS` is unchanged.
 Stop the server, replace the whole plugin directory, remove its stale injected
-copy where applicable, then restart; see [installation](../README.md).
+copy where applicable, then restart; see [installation](https://github.com/gamesgao/DLsiteGameVaultPlugin/blob/v0.2.0/README.md).
 
 ## Optional plugin-only proxy
 
@@ -50,7 +49,9 @@ remain intact.
 Local synthetic HTTPS/CONNECT fixtures verify routing and auth isolation;
 the real packaged-plugin host harness verifies media database/file persistence,
 same-ID reuse, failures, restart/replacement and removal. Fixtures are **not
-live DLsite responses**. Updated offline gates are wired to Ubuntu / Node 24
-Actions, but this session does not claim a hosted run. No NAS, live-DLsite,
+live DLsite responses**. The coordinating agent independently reran all 244
+tests, package and proxy/host checks locally. The updated Ubuntu 24.04 / Node
+24.21.0 [hosted gates also passed](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39185840810),
+and the downloaded build artifact passed SHA256 and ZIP integrity checks. No NAS, live-DLsite,
 Docker, PostgreSQL, GUI or real 0.1.0-to-0.2.0 persisted upgrade test was run.
-See [verification](verification.md) for actual commands, counts and coverage.
+See [verification](https://github.com/gamesgao/DLsiteGameVaultPlugin/blob/v0.2.0/docs/verification.md) for actual commands, counts and coverage.

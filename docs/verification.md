@@ -1,5 +1,22 @@
 # Executed verification
 
+## Coordinating-agent and hosted 0.2.0 acceptance — 2026-10-19
+
+The coordinator independently reran the changed code: 174 core + 70 provider
+tests, unchanged coverage gates, types/format, actual ZIP build, registration,
+local HTTP/HTTPS proxy smoke and full packaged-host proxy lifecycle all passed
+on macOS / Node 26.7.0. SQLite media source URLs, filesystem/API bytes, reuse,
+failure handling, restart/replacement and removal were checked. Upstream tracked
+source remained clean; no NAS or live DLsite access occurred.
+
+[GitHub run 39185840810](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39185840810)
+at `dacd3e9` also passed on Ubuntu 24.04 / Node 24.21.0: all 244 tests and the
+same offline gates, 33 local proxy origin requests / 15 CONNECT attempts,
+47 packaged-host fixture requests / 10 CONNECT attempts. Connection counts may
+vary with pooling. The coordinator downloaded `plugin-package` and independently
+verified SHA256 and ZIP integrity. The release job correctly skipped the branch
+push. These are synthetic fixtures, not live-site/NAS compatibility evidence.
+
 ## 0.2.0 scoped proxy acceptance — 2026-10-19
 
 **Actual local execution, not hosted CI or live DLsite evidence.** Started on
