@@ -540,19 +540,51 @@ describe("pacing, retries and timeouts", () => {
     },
   );
 
-  it("bounds retries, exposes network causes, and does not poison later requests", async () => {
+  it("bounds retries, redacts transport causes, and does not poison later requests", async () => {
     const { client, fetch } = setup({ retries: 2, requestIntervalMs: 0 });
-    const cause = new TypeError("connection reset");
+    const cause = new TypeError(
+      "http://fixture-user:fixture-password@proxy.invalid",
+      {
+        cause: new Error("fixture-password"),
+      },
+    );
     fetch
       .mockRejectedValueOnce(cause)
       .mockRejectedValueOnce(cause)
       .mockRejectedValueOnce(cause);
-    await expect(finish(client.getImage(imageUrl))).rejects.toMatchObject({
+    const error = await finish(client.getImage(imageUrl)).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({
       code: "network",
-      cause,
+      message: "DLsite network request failed",
     });
+    expect(error).not.toHaveProperty("cause");
     expect(fetch).toHaveBeenCalledTimes(3);
     expect((await finish(client.getImage(imageUrl))).data).toEqual(imageBytes);
+  });
+  it("redacts nested errors during response-body consumption, not only fetch", async () => {
+    const { client, fetch } = setup({ retries: 0, requestIntervalMs: 0 });
+    fetch.mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(
+              new Error("fixture-password", {
+                cause: new Error("fixture-user"),
+              }),
+            );
+          },
+        }),
+        { headers: { "content-type": "image/jpeg" } },
+      ),
+    );
+    const error = await finish(client.getImage(imageUrl)).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({ code: "network" });
+    expect(error).not.toHaveProperty("cause");
+    expect(String(error)).not.toContain("fixture-");
   });
 
   it("aborts stalled fetches at the configured deadline and retries once", async () => {

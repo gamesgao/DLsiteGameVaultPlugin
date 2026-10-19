@@ -29,7 +29,7 @@ const refreshed = await client.getProduct(product.id, { forceRefresh: true });
 | `search(query, options?)` | `Promise<DlsiteSearchCandidate[]>`. A complete ID or supported work URL calls `getProduct` and returns exactly `{ id, title, url }` in a one-element array. Otherwise searches trimmed keywords. No automatic selection. |
 | `getImage(url, options?)` | `Promise<DlsiteImage>`: `{ url: string, contentType: string, data: Uint8Array }`. URL is the final response URL; bytes are downloaded, not written to disk. |
 | `DlsiteRequestOptions` | `{ forceRefresh?: boolean }` accepted by all three methods. |
-| `DlsiteClientError` | Transport/response error with `code`, `url`, optional HTTP `status`, optional `retryAfterMs`, and underlying `cause` for network/JSON errors. |
+| `DlsiteClientError` | Transport/response error with `code`, `url`, optional HTTP `status` and `retryAfterMs`. Raw fetch/body transport causes are intentionally omitted because they can embed proxy credentials. JSON parse errors retain their non-transport cause. |
 | `DlsiteSupplementWarning` | `{ id: string, error: DlsiteClientError }`, delivered to `onWarning` for optional JSON failures. |
 
 `DlsiteLocale`, `DlsiteSearchSection`, `DlsiteClientOptions` and `DlsiteImage`
@@ -49,13 +49,21 @@ All durations are integer milliseconds. Invalid bounds throw `TypeError`.
 | `retries` | `1` | 0–3 additional attempts after a transient failure |
 | `cacheTtlMs` | `60000` | 0–300,000 from successful completion; 0 disables completed-result caching |
 | `cacheMaxEntries` | `100` | 0–1,000 entries **per result kind** (products/searches/images); 0 disables completed-result caching |
-| `fetch` | `globalThis.fetch` | Standard fetch signature; used as the HTTP boundary by unit tests. Must honor `signal` and `redirect: "manual"`. |
+| `fetch` | `globalThis.fetch` | Standard fetch signature; used by the plugin's scoped proxy and unit tests. Must honor `signal` and `redirect: "manual"`. |
 | `onWarning` | `console.warn` with work ID and error message | Synchronous callback for supplementary failures; host adapter can use its logger. A throwing callback propagates. |
 
 Pacing is shared by product HTML, AJAX, search, images, redirects and retries
 within **one client instance**. Exchanges are serialized. Reuse one client per
 provider rather than constructing one for every game; separate instances/processes
 do not coordinate. At most four redirect hops are followed per attempt.
+
+`DlsiteProxyTransport(proxyUrl)` is the optional Node transport exported with
+the core. Its `fetch` supplies a private Undici ProxyAgent dispatcher to
+standard fetch; `close()` releases it. The adapter owns its lifecycle. It
+accepts HTTP(S) proxy URIs and percent-encoded Basic proxy credentials, never
+sets a process-wide dispatcher, and exposes no TLS verification bypass.
+The host adapter reads `PLUGIN_DLSITE_PROXY_URL`; the standalone client itself
+does not interpret environment variables. See [provider.md](provider.md).
 
 Retries cover network/timeouts and HTTP 408, 425, 429, 500, 502, 503, 504.
 Backoff is 500/1,000/2,000 ms. Numeric seconds and HTTP-date `Retry-After` take

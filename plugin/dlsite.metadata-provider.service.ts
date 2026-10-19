@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  type OnModuleDestroy,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Readable } from "node:stream";
+import type { Repository } from "typeorm";
 import type { GamevaultGame } from "../../../src/modules/games/gamevault-game.entity.js";
-import type { Media } from "../../../src/modules/media/media.entity.js";
+import { Media } from "../../../src/modules/media/media.entity.js";
 import { MediaService } from "../../../src/modules/media/media.service.js";
 import { DeveloperMetadataService } from "../../../src/modules/metadata/developers/developer.metadata.service.js";
 import type { GameMetadata } from "../../../src/modules/metadata/games/game.metadata.entity.js";
@@ -15,6 +22,7 @@ import {
   DlsiteClient,
   DlsiteClientError,
   DlsiteParseError,
+  DlsiteProxyTransport,
   extractWorkId,
   normalizeWorkId,
   parseWorkUrl,
@@ -28,11 +36,15 @@ import {
 } from "./mapper.js";
 
 @Injectable()
-export class DlsiteMetadataProviderService extends MetadataProvider {
+export class DlsiteMetadataProviderService
+  extends MetadataProvider
+  implements OnModuleDestroy
+{
   readonly slug = slug;
   readonly name = "DLsite";
   readonly priority: number;
   private readonly client: DlsiteClient;
+  private readonly transport?: DlsiteProxyTransport;
 
   constructor(
     metadataService: MetadataService,
@@ -42,6 +54,8 @@ export class DlsiteMetadataProviderService extends MetadataProvider {
     tags: TagMetadataService,
     genres: GenreMetadataService,
     media: MediaService,
+    @InjectRepository(Media)
+    private readonly mediaRepository: Repository<Media>,
   ) {
     super(
       metadataService,
@@ -54,9 +68,12 @@ export class DlsiteMetadataProviderService extends MetadataProvider {
     );
     const config = readDlsiteConfig();
     this.priority = config.priority;
+    if (config.proxyUrl)
+      this.transport = new DlsiteProxyTransport(config.proxyUrl);
     this.client = new DlsiteClient({
       locale: config.locale,
       requestIntervalMs: config.requestIntervalMs,
+      fetch: this.transport?.fetch,
       onWarning: ({ id, error }) =>
         this.logger.warn({
           message: "DLsite supplemental data unavailable; using product HTML.",
@@ -64,6 +81,10 @@ export class DlsiteMetadataProviderService extends MetadataProvider {
           error,
         }),
     });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.transport?.close();
   }
 
   override async search(query: string): Promise<MinimalGameMetadataDto[]> {
@@ -138,16 +159,37 @@ export class DlsiteMetadataProviderService extends MetadataProvider {
         : undefined;
     if (!source) return prior;
     try {
-      const url = new URL(source);
-      if (
-        url.protocol !== "https:" ||
-        url.hostname !== "img.dlsite.jp" ||
-        url.port
-      ) {
-        throw new TypeError("Expected an HTTPS img.dlsite.jp image URL.");
-      }
       if (prior?.source_url === source) return prior;
-      return await this.mediaService.downloadByUrl(source);
+      const image = await this.client.getImage(source, { forceRefresh: true });
+      const buffer = Buffer.from(image.data);
+      const uploaded = await this.mediaService.upload(
+        {
+          fieldname: "file",
+          originalname: new URL(source).pathname.split("/").pop()!,
+          encoding: "7bit",
+          mimetype: image.contentType,
+          size: buffer.length,
+          buffer,
+          stream: Readable.from(buffer),
+          destination: "",
+          filename: "",
+          path: "",
+        },
+        "", // The host accepts an empty username for provider-owned media.
+      );
+      try {
+        // GameMetadata's media relations do not cascade URL updates.
+        const result = await this.mediaRepository.update(uploaded.id, {
+          source_url: source,
+        });
+        if (result.affected !== 1)
+          throw new Error("DLsite media source URL was not persisted");
+        uploaded.source_url = source;
+        return uploaded;
+      } catch (error) {
+        await this.mediaService.delete(uploaded);
+        throw error;
+      }
     } catch (error) {
       this.logger.warn({
         message: prior

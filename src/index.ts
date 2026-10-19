@@ -9,6 +9,7 @@ export { DlsiteParseError } from "./errors.js";
 export { parseProductHtml } from "./product-parser.js";
 export { parseSearchHtml } from "./search-parser.js";
 export { DlsiteClient, DlsiteClientError } from "./client.js";
+export { DlsiteProxyTransport } from "./proxy.js";
 export type {
   DlsiteClientOptions,
   DlsiteImage,

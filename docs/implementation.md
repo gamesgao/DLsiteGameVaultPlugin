@@ -13,7 +13,7 @@ Each implementation session uses GitHub Copilot GPT-6 Astra. Implementation sess
 Delivery implements reproducible local gates; no GitHub Actions/CI execution is
 claimed. Component 4's actual API/media/restart evidence and remaining limits
 are recorded in [verification.md](verification.md). Release notes are prepared
-in [release-notes-0.1.0.md](release-notes-0.1.0.md); the coordinating agent alone
+in [release-notes-0.2.0.md](release-notes-0.2.0.md); the coordinating agent alone
 accepts, commits/pushes and publishes the ZIP/checksum.
 
 The original planning document is design input, not a mandate to implement every speculative hardening item. Keep a short implementation decision log in docs/design.md if actual host behavior requires a design change.

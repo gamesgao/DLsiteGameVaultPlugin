@@ -46,6 +46,10 @@ export default defineConfig({
         replacement: `${host}/node_modules/@nestjs/testing/index.js`,
       },
       {
+        find: /^@nestjs\/typeorm$/,
+        replacement: `${host}/node_modules/@nestjs/typeorm/dist/index.js`,
+      },
+      {
         find: /^reflect-metadata$/,
         replacement: `${host}/node_modules/reflect-metadata/Reflect.js`,
       },

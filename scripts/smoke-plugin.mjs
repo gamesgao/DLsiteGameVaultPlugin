@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -15,17 +16,23 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
+import { startProxyFixture, fixtureImage } from "./proxy-fixture.mjs";
 
 const { values } = parseArgs({
   options: {
     backend: { type: "string" },
     archive: { type: "string" },
     live: { type: "boolean", default: false },
+    proxy: { type: "boolean", default: false },
   },
 });
 assert(
   values.backend,
-  "Usage: npm run smoke:plugin -- --backend PATH [--archive PATH] [--live]",
+  "Usage: npm run smoke:plugin -- --backend PATH [--archive PATH] [--live | --proxy]",
+);
+assert(
+  !(values.live && values.proxy),
+  "Choose live DLsite OR local proxy fixtures",
 );
 const backend = resolve(values.backend);
 const { version } = JSON.parse(
@@ -58,6 +65,9 @@ let token;
 let logs = "";
 let requests = 0;
 let injectedFailures = 0;
+let fixture;
+let closed = false;
+let blockedHostDns = 0;
 const username = `dlsite_${randomBytes(6).toString("hex")}`;
 const password = randomBytes(24).toString("base64url");
 
@@ -79,9 +89,9 @@ const env = {
   AUTH_OAUTH2_ENABLED: "false",
   AUTH_SEED: randomBytes(32).toString("hex"),
   GAMES_INDEX_INTERVAL_IN_MINUTES: "0",
-  PLUGIN_GAMESGAO_DLSITE_LOCALE: "ja_JP",
-  PLUGIN_GAMESGAO_DLSITE_PRIORITY: "20",
-  PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS: "500",
+  PLUGIN_DLSITE_LOCALE: "ja_JP",
+  PLUGIN_DLSITE_PRIORITY: "20",
+  PLUGIN_DLSITE_REQUEST_INTERVAL_MS: "500",
 };
 
 function waitForMessage(type) {
@@ -114,9 +124,14 @@ function waitForMessage(type) {
 
 async function start(expected = 1) {
   signal.throwIfAborted();
+  address = undefined;
   child = fork(
     join(import.meta.dirname, "smoke-plugin-host.mjs"),
-    [String(expected), String(values.live ? 48 - requests : 0)],
+    [
+      String(expected),
+      String(values.live ? 48 - requests : 0),
+      values.proxy ? "proxy" : "direct",
+    ],
     {
       cwd: host,
       env,
@@ -125,9 +140,16 @@ async function start(expected = 1) {
     },
   );
   logs = "";
+  closed = false;
   for (const stream of [child.stdout, child.stderr]) {
     stream.on("data", (chunk) => {
-      logs = (logs + chunk).slice(-20_000);
+      const combined = logs + chunk;
+      try {
+        fixture?.assertRedacted(combined);
+      } catch (error) {
+        controller.abort(error);
+      }
+      logs = combined.slice(-20_000);
     });
   }
   child.on("message", (message) => {
@@ -138,6 +160,14 @@ async function start(expected = 1) {
         controller.abort(new Error("Exceeded 48 live HTTP requests"));
     }
     if (message.type === "injected-failure") injectedFailures++;
+    if (message.type === "closed") closed = true;
+    if (message.type === "blocked-host-dns") blockedHostDns++;
+    if (message.type === "direct-attempt")
+      controller.abort(
+        new Error(
+          `Host attempted direct DNS in proxy fixture: ${message.hostname}`,
+        ),
+      );
   });
   const ready = await waitForMessage("ready");
   address = ready.address;
@@ -183,6 +213,12 @@ async function stop() {
   }
   for (const pid of pids) if (pid !== worker.pid) kill(pid, "SIGKILL");
   child = undefined;
+  fixture?.assertRedacted(logs);
+  if (address)
+    assert(
+      closed && worker.exitCode === 0,
+      "Host must close Nest and plugin transport cleanly",
+    );
   if (address) {
     await assert.rejects(
       fetch(`${address}/api/metadata/providers`, {
@@ -292,17 +328,24 @@ async function mediaEvidence(media) {
   const response = await request(`media/${media.id}`);
   const served = Buffer.from(await response.arrayBuffer());
   assert.match(response.headers.get("content-type"), /^image\//);
-  assert(file.length > 1_000, "Persisted image is implausibly small");
+  if (values.proxy)
+    assert.deepEqual(
+      file,
+      fixtureImage,
+      "Persisted bytes must equal the synthetic PNG fixture",
+    );
+  else assert(file.length > 1_000, "Persisted image is implausibly small");
   assert.equal(
     hash(served),
     hash(file),
     "HTTP media must equal the actual saved file",
   );
-  assert.equal(
-    file.subarray(0, 3).toString("hex"),
-    "ffd8ff",
-    "Expected actual JPEG bytes for these live works",
-  );
+  if (!values.proxy)
+    assert.equal(
+      file.subarray(0, 3).toString("hex"),
+      "ffd8ff",
+      "Expected actual JPEG bytes for these live works",
+    );
   const evidence = {
     id: media.id,
     source: media.source_url,
@@ -323,6 +366,251 @@ const map = (gameId, workId, status = 200) =>
   });
 const install = () =>
   execFileSync("unzip", ["-q", archive, "-d", plugins], { timeout: 10_000 });
+
+async function proxyLifecycle() {
+  const mediaRows = async () => {
+    const ack = waitForMessage("media-rows");
+    child.send({ type: "media-rows" });
+    const result = await ack;
+    assert.equal(result.error, undefined);
+    return result.rows;
+  };
+  const games = await until(
+    "synthetic archive scan",
+    () => json("games"),
+    (result) => result.data.length === 3,
+  );
+  const find = (prefix) =>
+    games.data.find((game) => basename(game.file_path).startsWith(prefix)).id;
+  const automaticId = find("03");
+  const manualId = find("01");
+  const ncId = find("02");
+  const automatic = await until(
+    "fixture automatic metadata",
+    () => json(`games/${automaticId}`),
+    (game) =>
+      source(game)?.cover && game.metadata?.title === source(game)?.title,
+  );
+  const original = checkProduct(
+    automatic,
+    "RJ000001",
+    "小さな冒険 & 空",
+    "2024-02-29",
+  );
+  assert.equal(
+    original.rating,
+    96,
+    "Fixture JSON supplement must supply the score",
+  );
+  const imageRequests = () =>
+    fixture.state.requests.filter((r) => r.kind === "image").length;
+  const assertImages = async (saved, id) => {
+    for (const [field, name] of [
+      ["cover", "cover"],
+      ["background", "scene"],
+    ]) {
+      const media = saved[field];
+      assert.equal(
+        media.source_url,
+        `https://img.dlsite.jp/synthetic/${id}/${name}.jpg`,
+        "Persist original URL, not redirect target or proxy URL",
+      );
+      assert.equal(
+        media.type,
+        "image/png",
+        "Host must detect the actual image type",
+      );
+      await mediaEvidence(media);
+    }
+  };
+  await assertImages(original, "RJ000001");
+  const initialMediaRows = await mediaRows();
+  assert.equal(initialMediaRows.length, 2);
+  assert.deepEqual(
+    initialMediaRows.map((row) => row.source_url).sort(),
+    [original.cover.source_url, original.background.source_url].sort(),
+  );
+  for (const id of [manualId, ncId])
+    assert.equal(source(await json(`games/${id}`)), undefined);
+  const beforeReindex = fixture.state.requests.length;
+  await request("games/reindex", { method: "PUT" });
+  await sleep(1_500, undefined, { signal });
+  assert.equal(fixture.state.requests.length, beforeReindex);
+  const candidates = await json(
+    "metadata/providers/dlsite/search?query=fixture",
+  );
+  assert(
+    candidates.some((candidate) => candidate.provider_data_id === "RJ000001"),
+  );
+  const beforeReuse = imageRequests();
+  await map(manualId, "RJ000001");
+  assert.equal(
+    source(await json(`games/${manualId}`)).cover.id,
+    original.cover.id,
+  );
+  assert.equal(
+    imageRequests(),
+    beforeReuse,
+    "Same-ID mapping must reuse persisted media",
+  );
+
+  // Real host format validation must reject a newly downloaded invalid image.
+  const beforeFailure = await json(`games/${manualId}`);
+  fixture.state.mode = "invalid-image";
+  await map(manualId, "RJ000002", 500);
+  assert.deepEqual(await json(`games/${manualId}`), beforeFailure);
+  assert.deepEqual(
+    await mediaRows(),
+    initialMediaRows,
+    "Host format rejection must not leave a media row",
+  );
+  assert.equal(
+    (await readdir(env.VOLUMES_MEDIA)).length,
+    2,
+    "Host format rejection must not leave a file",
+  );
+  fixture.state.mode = "healthy";
+  await map(manualId, "RJ000002");
+  const remapped = await json(`games/${manualId}`);
+  const second = source(remapped);
+  assert.notEqual(second.cover.id, original.cover.id);
+  await assertImages(second, "RJ000002");
+  const persistedMediaRows = await mediaRows();
+  assert.equal(persistedMediaRows.length, 4);
+  assert.equal((await readdir(env.VOLUMES_MEDIA)).length, 4);
+  assert.deepEqual(
+    persistedMediaRows.map((row) => row.source_url).sort(),
+    [
+      original.cover.source_url,
+      original.background.source_url,
+      second.cover.source_url,
+      second.background.source_url,
+    ].sort(),
+  );
+  await json(`games/${manualId}`, {
+    method: "PUT",
+    body: {
+      user_metadata: {
+        title: "Fixture user title",
+        rating: 42,
+        tags: ["Fixture user tag"],
+      },
+    },
+  });
+  const beforeRefresh = fixture.state.requests.length;
+  const beforeImages = imageRequests();
+  await map(manualId, "RJ000002");
+  assert.equal(
+    fixture.state.requests.length - beforeRefresh,
+    3,
+    "Refresh must fetch redirect, HTML and JSON",
+  );
+  assert.equal(imageRequests(), beforeImages);
+  assert.equal(
+    source(await json(`games/${manualId}`)).cover.id,
+    second.cover.id,
+  );
+  const userOverride = await json(`games/${manualId}`);
+  assert.equal(userOverride.metadata.title, "Fixture user title");
+  assert.equal(userOverride.metadata.rating, 42);
+  assert.deepEqual(names(userOverride.metadata.tags), ["Fixture user tag"]);
+
+  fixture.state.mode = "images-fail";
+  await map(manualId, "RJ000002");
+  let refreshed = await json(`games/${manualId}`);
+  assert.equal(source(refreshed).cover.id, second.cover.id);
+  assert.equal(source(refreshed).background.id, second.background.id);
+  await assertImages(source(refreshed), "RJ000002");
+  fixture.state.mode = "metadata-fail";
+  for (const id of ["RJ000002", "RJ000001"]) {
+    await map(manualId, id, 500);
+    assert.deepEqual(await json(`games/${manualId}`), refreshed);
+  }
+  fixture.state.mode = "healthy";
+
+  // An ordinary request in the very same host process must bypass the plugin proxy.
+  const connects = fixture.state.connects.length;
+  const ack = waitForMessage("independent");
+  child.send({ type: "independent", url: fixture.independentUrl });
+  assert.equal((await ack).text, "independent host request");
+  assert.equal(fixture.state.connects.length, connects);
+  assert.equal(fixture.state.independent, 1);
+  assert.deepEqual(
+    new Set(fixture.state.requests.map((r) => r.kind)),
+    new Set(["product", "info", "search", "image"]),
+  );
+  assert.deepEqual(fixture.state.failures, []);
+  assert(fixture.state.connects.every((r) => r.authorized));
+
+  for (const phase of ["restart", "same-version replacement"]) {
+    await stop();
+    if (phase === "same-version replacement") {
+      await rm(join(plugins, "dlsite"), { recursive: true });
+      await rm(injected, { recursive: true });
+      install();
+    }
+    const before = fixture.state.requests.length;
+    await start();
+    await login();
+    await checkProviders();
+    assert.deepEqual(
+      await mediaRows(),
+      persistedMediaRows,
+      "SQLite media rows must survive process restart",
+    );
+    for (const old of [automatic, refreshed]) {
+      const current = await json(`games/${old.id}`);
+      assert.deepEqual(fields(source(current)), fields(source(old)));
+      assert.deepEqual(fields(current.metadata), fields(old.metadata));
+      assert.deepEqual(
+        withoutUpdateCounters(current.user_metadata),
+        withoutUpdateCounters(old.user_metadata),
+      );
+      await assertImages(source(current), source(old).provider_data_id);
+    }
+    assert.equal(
+      fixture.state.requests.length,
+      before,
+      "Restart must use persisted metadata/media",
+    );
+    await map(manualId, "RJ000002");
+    const current = await json(`games/${manualId}`);
+    assert.equal(
+      source(current).cover.id,
+      second.cover.id,
+      "Reloaded source_url must allow same-ID reuse",
+    );
+    assert.equal(
+      imageRequests(),
+      beforeImages + 2,
+      "Failed replacement images were requested once each; restart must not redownload",
+    );
+    refreshed = current;
+    console.log(
+      `Fixture ${phase}: DB source URLs, media IDs/bytes, user priority and same-ID reuse passed.`,
+    );
+  }
+  await stop();
+  // A new process/agent must fail closed on CONNECT denial without any direct attempt.
+  fixture.state.mode = "deny";
+  await start();
+  await login();
+  const beforeDenied = await json(`games/${manualId}`);
+  const beforeDeniedRequests = fixture.state.requests.length;
+  await map(manualId, "RJ000002", 500);
+  assert.equal(fixture.state.requests.length, beforeDeniedRequests);
+  assert.deepEqual(await json(`games/${manualId}`), beforeDenied);
+  await stop();
+  await rm(join(plugins, "dlsite"), { recursive: true });
+  await rm(injected, { recursive: true });
+  await start(0);
+  await login();
+  await checkProviders(0);
+  await assertImages(source(await json(`games/${automaticId}`)), "RJ000001");
+  console.log(
+    `Local CONNECT fixture evidence: ${fixture.state.requests.length} origin requests, ${fixture.state.connects.length} tunnels; no direct DNS, no leaked auth; removal retains saved media.`,
+  );
+}
 
 async function lifecycle() {
   const games = await until(
@@ -526,6 +814,12 @@ async function lifecycle() {
 
 try {
   await mkdir(host);
+  if (values.proxy) {
+    fixture = await startProxyFixture(runtime);
+    env.PLUGIN_DLSITE_PROXY_URL = fixture.httpUrl;
+    env.NODE_EXTRA_CA_CERTS = fixture.ca;
+    env.PLUGIN_DLSITE_REQUEST_INTERVAL_MS = "0";
+  }
   for (const name of [
     "CONFIG",
     "FILES",
@@ -560,16 +854,23 @@ try {
   );
   install();
   await access(join(plugins, "dlsite/dlsite.plugin.module.js"));
-  if (values.live) {
+  if (values.live || values.proxy) {
     await writeFile(
       join(runtime, "synthetic.txt"),
       "Synthetic integration fixture. No game executable or copyrighted game data.\n",
     );
-    for (const filename of [
-      "01 Manual Example (W_P).zip",
-      "02 RJ150726 Skip (NC) (W_P).zip",
-      "03 RJ141995 (W_P).zip",
-    ]) {
+    const filenames = values.proxy
+      ? [
+          "01 Manual Fixture (W_P).zip",
+          "02 RJ000002 Skip (NC) (W_P).zip",
+          "03 RJ000001 (W_P).zip",
+        ]
+      : [
+          "01 Manual Example (W_P).zip",
+          "02 RJ150726 Skip (NC) (W_P).zip",
+          "03 RJ141995 (W_P).zip",
+        ];
+    for (const filename of filenames) {
       execFileSync(
         "zip",
         ["-q", join(env.VOLUMES_FILES, filename), "synthetic.txt"],
@@ -587,12 +888,15 @@ try {
   await login();
   await checkProviders();
   if (values.live) await lifecycle();
+  if (values.proxy) await proxyLifecycle();
   console.log(
     JSON.stringify(
       {
-        result: values.live
-          ? "host lifecycle passed"
-          : "registration passed (no live retrieval)",
+        result: values.proxy
+          ? "packaged host + local proxy fixtures passed (no live DLsite)"
+          : values.live
+            ? "host lifecycle passed"
+            : "registration passed (no live retrieval)",
         host: manifest.version,
         node: process.version,
         database: "SQLite",
@@ -600,6 +904,7 @@ try {
         archiveSha256: hash(await readFile(archive)),
         liveRequests: requests,
         injectedFailures,
+        ...(values.proxy ? { blockedHostDns } : {}),
       },
       null,
       2,
@@ -607,6 +912,7 @@ try {
   );
 } catch (error) {
   console.error(error.stack ?? error);
+  fixture?.assertRedacted(logs);
   if (logs) console.error(`Last host diagnostics:\n${logs}`);
   process.exitCode = 1;
 } finally {
@@ -616,6 +922,7 @@ try {
     clearTimeout(deadline);
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
+    await fixture?.close();
     await rm(runtime, { recursive: true, force: true });
     console.log(
       "Disposable runtime, SQLite, admin, synthetic archives and media removed.",

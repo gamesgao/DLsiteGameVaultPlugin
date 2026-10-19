@@ -409,7 +409,7 @@ export class DlsiteClient {
       try {
         const headers: Record<string, string> = {
           "User-Agent":
-            "DLsiteGameVaultPlugin/0.1 (+https://github.com/gamesgao/DLsiteGameVaultPlugin)",
+            "DLsiteGameVaultPlugin/0.2 (+https://github.com/gamesgao/DLsiteGameVaultPlugin)",
           Accept:
             kind === "image"
               ? "image/*"
@@ -503,15 +503,13 @@ export class DlsiteClient {
           cause instanceof DlsiteParseError
         )
           throw cause;
+        // Fetch/body errors may embed proxy credentials, including nested causes.
         throw new DlsiteClientError(
           controller.signal.aborted ? "timeout" : "network",
           controller.signal.aborted
             ? "DLsite request timed out"
             : "DLsite network request failed",
           url.href,
-          undefined,
-          undefined,
-          { cause },
         );
       } finally {
         clearTimeout(timer);

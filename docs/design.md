@@ -41,9 +41,13 @@ Validate realistic installation, update and removal behavior. Prefer ordinary co
 
 ## Acceptance
 
-Functional FIRST unit tests, coverage gates, type checking, package build, real low-volume DLsite smoke, and an actual isolated GameVault plugin load and metadata lifecycle test. Add concise evidence without claiming a NAS or GUI test that was not performed.
+Functional FIRST unit tests, coverage gates, type checking, package build,
+and isolated GameVault registration and metadata/media lifecycle checks.
+For 0.2.0 the network acceptance uses local CONNECT/HTTPS fixtures; live
+DLsite checks remain opt-in and were not requested for this change.
+Add concise evidence without claiming NAS, GUI or hosted CI execution.
 
-## Provider implementation decisions (2026-10-17)
+## Historical 0.1.0 provider decisions (2026-10-17)
 
 - Follow the official `.local/plugins/dlsite` module layout, explicit `.js`
   imports and default module export. Compile with the host's TypeScript/
@@ -59,7 +63,7 @@ Functional FIRST unit tests, coverage gates, type checking, package build, real 
   nonempty supplied groups, with separate topical/series/feature tag groups.
   Do not use another product's metadata after remapping. Source codes and
   original-Unicode name hashes give stable provider relation identifiers.
-- Confirmed `MediaService.downloadByUrl` records the source URL and validates
+- At 0.1.0, `MediaService.downloadByUrl` recorded the source URL and validated
   actual bytes; it is simpler than manufacturing Multer uploads and an uploader.
   Reuse unchanged available images. Log and retain valid same-ID images on
   download failure; without a valid prior image, reject the snapshot before
@@ -114,3 +118,41 @@ remains opt-in/local. Do not replace published releases for CI-only changes.
 See [ci.md](ci.md); remote execution evidence is recorded separately.
 
 Contracts, commands and mapping details: [provider.md](provider.md).
+
+## 0.2.0 scoped proxy and media transport (2026-10-19)
+
+- All runtime settings now use `PLUGIN_DLSITE_`: `LOCALE`, `PRIORITY`,
+  `REQUEST_INTERVAL_MS`, and optional `PROXY_URL`. No old-prefix aliases.
+  Defaults remain Japanese, priority 20 and 500 ms. Explicit 0.1.0 settings
+  must be renamed; `VOLUMES_PLUGINS` stays host-owned.
+- Pin Undici 7.30.1 directly and bundle it privately. Reuse a single
+  ProxyAgent through the client's existing injected fetch boundary; never
+  replace global fetch or the global dispatcher. No direct fallback.
+  Support HTTP/HTTPS with optional Basic credentials, not SOCKS. Close on
+  Nest module destruction. Preserve origin and proxy TLS verification.
+- Local testing found Undici 7 passes IP proxy addresses as SNI, which Node
+  26 rejects. Use the supported `clientFactory`/Pool/buildConnector APIs for
+  HTTPS IP proxies to omit SNI while retaining certificate IP verification.
+  No upstream-main-only features or insecure TLS settings are assumed.
+- Supersede the 0.1.0 image download choice above: `downloadByUrl` performs
+  its own global fetch and would bypass scoped routing. Fetch all image
+  bytes through `DlsiteClient.getImage`, with its pacing/retry/timeout and
+  redirect checks; pass a typed in-memory file to public host upload with
+  no uploader. Host validation, file persistence, media rows and GC remain
+  unchanged.
+- Upload does not populate `source_url`; metadata relations do not cascade
+  updates. Use supported Nest TypeORM injection for the host Media entity
+  and update exactly the new media row with the original source URL. Clean
+  it through public host delete if this update fails. No private patch,
+  new account, media implementation or metadata transaction framework.
+  Keep same-ID availability/reuse and previous-image failure preservation.
+- Fetch and response-body errors deliberately omit raw transport causes;
+  config/construction/shutdown errors never echo proxy URIs or retain
+  credential-bearing nested causes. HTTP status, request URL, timeout and
+  retry metadata remain useful. Credentials are sent only on CONNECT.
+- Keep FIRST suites offline and fast; put real socket/certificate/host work
+  in bounded `smoke:proxy` and `e2e:proxy` scripts. They use only loopback
+  fixture servers and temporary credentials/CA, explicitly synthetic
+  responses, real extracted plugin/SQLite/media APIs and fresh processes.
+  No public DNS or NAS access. Add those gates to Ubuntu / Node 24 Actions,
+  without claiming the updated hosted workflow has run.

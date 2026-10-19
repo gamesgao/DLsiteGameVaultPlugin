@@ -56,7 +56,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            build-essential python3 zip unzip procps p7zip-full
+            build-essential python3 zip unzip procps p7zip-full openssl
 
       - uses: pnpm/setup@v1
         with:
@@ -85,6 +85,8 @@ jobs:
         run: |
           npm run build:plugin -- --backend "$BACKEND"
           npm run smoke:plugin -- --backend "$BACKEND" --archive "artifacts/dlsite-$VERSION.zip"
+          npm run smoke:proxy
+          npm run e2e:proxy -- --backend "$BACKEND" --archive "artifacts/dlsite-$VERSION.zip"
           (cd artifacts && sha256sum --check SHA256SUMS)
           unzip -tq "artifacts/dlsite-$VERSION.zip"
 

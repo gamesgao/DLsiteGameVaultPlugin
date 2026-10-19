@@ -1,8 +1,9 @@
 # GitHub Actions build and release
 
 `.github/workflows/build-release.yml` has one build job and a dependent release
-job. Adding this workflow does **not** require rebuilding or replacing the
-published `v0.1.0` release, changing the package version, or pushing any tag.
+job. Version 0.2.0 extends its offline gates with scoped-proxy/media lifecycle
+fixtures. It does not replace the published `v0.1.0` release; publication is
+still a separate maintainer-owned matching-tag action.
 
 ## Triggers and gates
 
@@ -15,7 +16,7 @@ The runner is `ubuntu-24.04`, with Node 24 and pnpm 11.7.0. The backend is
 checked out from `Phalcode/gamevault-backend` at exactly
 `859d71ef46f3a1f00a236e5d4c7dbde1eeba02b3` (17.0.1), not a moving branch or
 version tag. npm and pnpm use their committed lockfiles. Native build tools,
-Python 3, `zip`, `unzip`, `ps` (procps) and 7-Zip are installed explicitly.
+Python 3, OpenSSL, `zip`, `unzip`, `ps` (procps) and 7-Zip are installed explicitly.
 The upstream pnpm build allowlist permits `better-sqlite3` and `bcrypt`;
 install scripts are not disabled. No tracked upstream code is patched.
 
@@ -24,7 +25,11 @@ suites with their unchanged coverage thresholds (90% lines/functions/statements,
 85% branches). Core coverage runs first so it does not erase adapter reports.
 The plugin is built through the pinned host, then its **actual ZIP** is
 extracted and registered using the real loader, temporary SQLite and the
-authenticated localhost API. Checksum and ZIP integrity must also pass.
+authenticated localhost API. `smoke:proxy` then exercises real HTTP/HTTPS
+CONNECT against local HTTPS fixtures; `e2e:proxy` verifies the actual packaged
+plugin's media persistence/reuse/failure/restart lifecycle through the proxy.
+Both are bounded, offline and use temporary certificates/credentials only.
+Checksum and ZIP integrity must also pass.
 The normal smoke has a zero live-fetch budget; neither `e2e:host` nor
 `smoke:dlsite` runs in Actions. Those remain explicit local live checks, not
 public-site-dependent release gates.
@@ -65,7 +70,7 @@ use `pull_request`, never `pull_request_target`; no PR title/body/branch text
 is interpolated into shell code. No PAT, DLsite credentials or other external
 secret is required.
 
-## First remote acceptance
+## Historical 0.1.0 remote acceptance
 
 [Hosted run 39014813257](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39014813257)
 passed on Ubuntu 24.04 / Node 24.21.0: all 224 tests and coverage gates,
@@ -73,6 +78,9 @@ native dependencies, packaging, one-provider/zero-live-fetch registration and
 artifact upload succeeded. The coordinating agent downloaded `plugin-package`
 and independently verified its SHA256 and ZIP integrity. Release was correctly
 skipped for this branch push; no existing release was changed.
+
+This is not a hosted result for the new 0.2.0 proxy gates. Their actual local
+results and limitations are recorded in [verification.md](verification.md).
 
 Publishing workflow files requires an authorized credential (for GitHub CLI
 OAuth, the `workflow` scope). Use the normal local authorization flow if a
@@ -88,7 +96,7 @@ gh run watch RUN_ID --exit-status
 gh run download RUN_ID --name plugin-package --dir /path/to/empty/download
 # In that download directory:
 shasum -a 256 -c SHA256SUMS
-unzip -tq dlsite-0.1.0.zip
+unzip -tq dlsite-0.2.0.zip
 ```
 
 Check that all build gates passed, the registration smoke reports one DLsite

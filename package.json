@@ -1,6 +1,6 @@
 {
   "name": "dlsite-gamevault-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Native DLsite metadata provider for GameVault",
   "license": "MIT",
@@ -29,6 +29,8 @@
     "test:provider": "node scripts/gamevault.mjs test",
     "test:provider:coverage": "node scripts/gamevault.mjs coverage",
     "smoke:plugin": "node scripts/smoke-plugin.mjs",
+    "smoke:proxy": "node scripts/smoke-proxy.mjs",
+    "e2e:proxy": "node scripts/smoke-plugin.mjs --proxy",
     "e2e:host": "node scripts/smoke-plugin.mjs --live",
     "smoke:dlsite": "node scripts/smoke-dlsite.mjs",
     "format:check": "prettier --check \"src/**/*.ts\" \"plugin/**/*.ts\" \"test/**/*.ts\" \"test-provider/**/*.ts\" \"scripts/*.mjs\" \"*.json\" \"vitest*.ts\" \".github/workflows/*.yml\"",
@@ -36,7 +38,8 @@
   },
   "dependencies": {
     "cheerio": "1.2.0",
-    "turndown": "7.2.4"
+    "turndown": "7.2.4",
+    "undici": "7.30.1"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

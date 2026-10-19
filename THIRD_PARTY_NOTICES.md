@@ -34,11 +34,13 @@ https://github.com/Phalcode/gamevault-backend
 
 GameVault backend is separately licensed CC BY-NC-SA 4.0. It is a runtime/build compatibility dependency, not included in this plugin distribution. Consult its upstream license before redistributing any backend code or images.
 
-## Bundled scraper dependencies
+## Bundled scraper and transport dependencies
 
 The plugin archive includes `licenses/<package>@<version>/` with the manifests
 and license notices for the private JavaScript dependencies actually included
-in its core bundle (including nested dependency versions). No GameVault,
+in its core bundle (including nested dependency versions). Undici 7.30.1 is
+a pinned direct MIT-licensed dependency for the private proxy transport.
+No GameVault,
 NestJS, TypeORM or reflect-metadata implementation is bundled.
 
 ### boolbase 1.0.0 (ISC)

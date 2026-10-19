@@ -10,9 +10,11 @@ export is `DlsitePluginModule`; Nest imports the host `MetadataModule` and
 Set environment variables on the **GameVault server process** before startup:
 
 ```sh
-PLUGIN_GAMESGAO_DLSITE_LOCALE=ja_JP
-PLUGIN_GAMESGAO_DLSITE_PRIORITY=20
-PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS=500
+PLUGIN_DLSITE_LOCALE=ja_JP
+PLUGIN_DLSITE_PRIORITY=20
+PLUGIN_DLSITE_REQUEST_INTERVAL_MS=500
+# Optional; omit entirely to keep the default transport:
+PLUGIN_DLSITE_PROXY_URL=http://proxy.example:8080
 ```
 
 All are optional. Locale supports `ja_JP`, `en_US`, `zh_CN`, `zh_TW`; priority
@@ -23,6 +25,26 @@ client's HTTP requests. Other timeout/retry/cache settings use the existing
 [client defaults](client.md); no separate provider policy layer is introduced.
 Invalid settings fail construction. Remove the plugin to disable it.
 These are plugin environment variables, not additions to the host YAML schema.
+
+**0.1.0 migration:** rename `PLUGIN_GAMESGAO_DLSITE_LOCALE` to
+`PLUGIN_DLSITE_LOCALE`, `PLUGIN_GAMESGAO_DLSITE_PRIORITY` to
+`PLUGIN_DLSITE_PRIORITY`, and `PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS` to
+`PLUGIN_DLSITE_REQUEST_INTERVAL_MS`. Existing explicit settings require this
+change; the old names are ignored, not aliases. `VOLUMES_PLUGINS` remains a
+GameVault setting and is unchanged.
+
+`PROXY_URL` supports HTTP and HTTPS proxy URIs, optionally
+`http://USERNAME:PASSWORD@proxy.example:8080` (percent-encode each credential).
+SOCKS is not supported. Both schemes use CONNECT for HTTPS destinations.
+Use an address reachable from inside the GameVault container; `127.0.0.1`
+is the container itself. Invalid configuration fails without echoing the URI.
+One pinned private Undici **7.30.1** ProxyAgent is reused by the provider,
+injected through `DlsiteClientOptions.fetch`, and closed on Nest shutdown.
+It never installs a global dispatcher or changes global fetch. Without the
+setting the existing default fetch is used; with it, failures never retry
+directly. Proxy auth is confined to CONNECT, not origin request headers.
+Destination and HTTPS-proxy certificate verification stay enabled. No
+insecure TLS override is provided.
 
 ## Provider APIs and matching
 
@@ -89,7 +111,8 @@ slug. Name-derived IDs can change when display locale changes.
 The host's `GameMetadataService.save()` initializes relation arrays to `[]`.
 The adapter therefore loads `findByProviderSlug("dlsite", { loadRelations:
 true })` and selects only the requested ID. This public host API lists all
-DLsite records; no direct database repository/core patch is added.
+DLsite records. Metadata retrieval still uses this public API; the only added
+repository operation is the narrow media-source persistence described below.
 Unknown scalar values keep prior same-ID values. Missing **or empty** optional
 relation/gallery sections retain their last useful values: a parser's empty
 section is not reliable deletion evidence. Nonempty sections replace their
@@ -101,14 +124,24 @@ relations, scalars or images.
 
 ### Images
 
-Use host `MediaService.downloadByUrl(source)` directly: it saves `source_url`,
-validates actual file bytes against host-supported formats, writes the file and
-returns persisted `Media`. Unlike `upload(file, username)`, it needs no uploader
-account or synthetic Multer upload. Only HTTPS `img.dlsite.jp` source URLs
-without credentials/nonstandard ports are accepted. The host owns the download
-timeout, redirect behavior and supported format list; this is not a new
-redirect-security or media-GC implementation. Client pacing covers page/JSON/
-search traffic, not the host's image downloads.
+Download bytes with the same `DlsiteClient.getImage()` used by the provider,
+so images cannot bypass its proxy. Only HTTPS `img.dlsite.jp` URLs without
+credentials/nonstandard ports are accepted, including redirects. The client's
+timeouts, retries, MIME checks and shared pacing now also cover image requests.
+The host still owns actual byte/format validation, atomic file writes, media
+rows, availability and garbage collection.
+
+Pass those bytes as a typed in-memory Multer file to public
+`MediaService.upload(file, "")`. The pinned host treats the empty username as
+no uploader; no account is created. Upload does not set `source_url`, and
+GameMetadata's media relations do not cascade updates. Therefore import
+`TypeOrmModule.forFeature([Media])` and inject the **host** Media repository to
+persist the original requested source URL after upload. Require one updated
+row before returning the media. Never store a proxy URL, redirected URL or
+data URL. On URL-update failure use public `MediaService.delete()` to clean
+the new media, then follow the existing failure-preservation policy.
+No host source, private methods, duplicate entities or storage implementation
+are patched. Reload and process restart are verified against real SQLite.
 
 Reuse same-source media only after `isAvailable(id)` succeeds. Missing image
 sections keep an available same-ID old image. A download/format failure logs a
@@ -131,7 +164,7 @@ npm ci
 npm run build:plugin -- --backend /path/to/gamevault-backend
 ```
 
-Output: `artifacts/dlsite/`, `artifacts/dlsite-0.1.0.zip` and
+Output: `artifacts/dlsite/`, `artifacts/dlsite-0.2.0.zip` and
 `artifacts/SHA256SUMS`. The directory has
 `dlsite.plugin.module.js`, native ESM adapter files, a private core/scraper
 bundle, declarations, license notices, README, changelog and `docs/`. Only
@@ -144,7 +177,7 @@ volume (default `/plugins`):
 ```sh
 cd artifacts
 shasum -a 256 -c SHA256SUMS
-unzip dlsite-0.1.0.zip -d /path/to/plugin-volume
+unzip dlsite-0.2.0.zip -d /path/to/plugin-volume
 # Result: /path/to/plugin-volume/dlsite/dlsite.plugin.module.js
 ```
 
@@ -180,6 +213,8 @@ npm run test:provider -- --backend /path/to/gamevault-backend
 npm run test:provider:coverage -- --backend /path/to/gamevault-backend
 npm run build:plugin -- --backend /path/to/gamevault-backend
 npm run smoke:plugin -- --backend /path/to/gamevault-backend
+npm run smoke:proxy
+npm run e2e:proxy -- --backend /path/to/gamevault-backend
 npm run e2e:host -- --backend /path/to/gamevault-backend
 ```
 
@@ -199,23 +234,32 @@ AppModule, SQLite migrations, first-user ADMIN registration, Basic login and
 bearer authentication. It asserts unauthenticated access is rejected and the
 provider list contains exactly one `dlsite`. This mode does not retrieve DLsite.
 
-`e2e:host` runs that same harness with `--live`. Three real ZIPs contain only
+`e2e:proxy` runs the same harness with `--proxy`, real local HTTP CONNECT and
+HTTPS fixture origins, a temporary CA trusted only in test workers, and
+synthetic HTML/JSON/PNG responses. It exercises persisted source URLs, media
+files/API bytes, same-ID reuse after restart/replacement, real host format
+rejection, image/metadata/proxy failures, auth isolation, independent host
+requests and removal. Public DNS is blocked; the pinned host's incidental
+frontend GitHub lookup is denied and counted, not fetched. See [testing.md](testing.md).
+
+`e2e:host` remains an opt-in live check. Three real ZIPs contain only
 an invented text file; `(W_P)` avoids unnecessary executable inspection. The
 host's real filesystem indexer creates the records, not SQL inserts or mocked
 controllers. Authenticated API checks cover automatic ID mapping, NC/no-ID
 policy, keyword search/manual remap, real metadata and on-disk media bytes,
 same-ID forced refresh, user priority, restart, replacement and removal.
 
-The worker observes real outbound fetch responses without rewriting them.
+In live mode the worker observes real outbound fetch responses without rewriting them.
 A clearly marked, separate failure phase injects transport exceptions only:
 same-ID refresh and different-ID remap both return 500 and preserve the complete
 saved game. It does not fabricate successful HTML, JSON or media responses.
 The normal unit fixtures remain separate from live acceptance.
 
-Both modes bind **only `127.0.0.1`**, use ephemeral ports, have a 300-second
+All host modes bind **only `127.0.0.1`**, use ephemeral ports, have a 300-second
 overall deadline and a 5-second shutdown allowance, and clean up on errors/
 interrupts as well as success. Live mode permits at most 48 outbound fetch
-attempts (the observed run used 20; host media redirects are host-owned).
+attempts (0.1.0 observed 20). In 0.2.0 image redirects are client-owned and
+counted too; live mode was not rerun for this version.
 Children use an isolated environment, no inherited host credentials/`.env`,
 and only temporary DB/volumes. The parent stops each worker and its descendants,
 verifies connection refusal and removes its runtime. Credentials/tokens are
@@ -237,6 +281,6 @@ also advance user metadata update counters without changing user values.
 No host fork or provider workaround was added for these behaviors.
 
 See [verification.md](verification.md) for executed results. Client GUI, NAS,
-other databases/platforms, Node 24 and real cross-version upgrades remain
+other databases/platforms, 0.2.0 on Node 24 and real cross-version upgrades remain
 untested. The official Playnite integration does not automatically synchronize
 these server metadata fields.

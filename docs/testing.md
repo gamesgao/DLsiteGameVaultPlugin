@@ -51,6 +51,61 @@ run core coverage first because it cleans its report directory.
 the real host loader, temporary SQLite and authenticated localhost API.
 This default mode is registration-only, with no DLsite retrieval.
 
+## Offline proxy and packaged-host lifecycle
+
+```sh
+npm run build
+npm run smoke:proxy
+npm run build:plugin -- --backend /path/to/disposable/gamevault-backend
+npm run e2e:proxy -- --backend /path/to/disposable/gamevault-backend
+```
+
+These heavier tests are separate from FIRST unit tests. Require Node, OpenSSL,
+`zip`, `unzip`, `ps`, and a built compatible backend with installed dependencies
+and a working SQLite binding. No public DLsite reachability, Docker, NAS or
+external proxy is needed. `--archive PATH` selects an actual release ZIP.
+
+`smoke:proxy` has a 45-second worker deadline and 2-second client exchanges.
+It starts real HTTP and HTTPS CONNECT proxies plus a local HTTPS origin,
+with a generated one-day certificate and random temporary credentials. Only
+test workers trust that CA using `NODE_EXTRA_CA_CERTS`; TLS is never disabled.
+Synthetic product/search HTML, ratings JSON and a one-pixel PNG demonstrate
+all client request kinds, genuine redirects, decoded proxy auth confined to
+CONNECT, unrelated default fetch, rejected untrusted TLS at origin and proxy,
+wrong auth, proxy denial, no direct fallback and agent closure. DNS guards
+prevent a regression from contacting public servers. Successful and failure
+worker output is checked for credential leakage before it can be printed.
+
+`e2e:proxy` shares the existing 300-second isolated host harness, with a
+100-request fixture-origin budget and bounded host shutdown. It extracts
+the actual ZIP, loads real Nest/TypeORM modules, indexes three synthetic
+archives, authenticates a temporary admin and uses real metadata/media APIs.
+Assertions cover automatic/manual mapping, four-section search, NC, freshness,
+real upload byte validation, four persisted images and their original
+`source_url`, user priority, same-ID reuse, failed-image preservation, failed
+remap/refresh snapshots, restarts, whole-directory replacement and removal.
+After each fresh process, a forced mapping proves that **reloaded** source
+URLs still reuse the same media IDs without downloading images again.
+
+Media API responses must equal actual saved files and the synthetic PNG;
+a read-only host SQL query also compares persisted media rows before/after
+format failure and restarts. No database records or success responses are
+injected into the host. The proxy observes real requests; synthetic origin
+responses are explicitly fixtures, never called live DLsite evidence.
+The same host process makes an independent default-fetch request that
+bypasses the plugin proxy. Proxy denial in a fresh process returns 500 and
+preserves the full saved game; attempted direct DLsite DNS fails the harness.
+
+The pinned host can initialize its frontend fetch despite
+`WEB_UI_ENABLED=false`. Its `api.github.com` DNS attempts are explicitly
+blocked and counted, not allowed through or answered with a successful fake.
+All other non-loopback DNS attempts fail acceptance. The proxy-mode host
+does not monkeypatch global fetch. Both scripts stop their own processes and
+servers and remove temporary certs, keys, credentials, databases and files on
+success, failure or handled interrupt. SIGKILL/power loss cannot run cleanup.
+These offline smokes are wired into Ubuntu / Node 24 Actions; local execution
+does not establish an updated hosted CI result.
+
 ## Opt-in native host lifecycle
 
 After building the plugin, from the repository root:
@@ -58,7 +113,7 @@ After building the plugin, from the repository root:
 ```sh
 npm run e2e:host -- --backend /path/to/disposable/gamevault-backend
 # Optional: verify a specific release asset rather than the default artifact.
-npm run e2e:host -- --backend /path/to/disposable/gamevault-backend --archive /path/to/dlsite-0.1.0.zip
+npm run e2e:host -- --backend /path/to/disposable/gamevault-backend --archive /path/to/dlsite-0.2.0.zip
 ```
 
 Requirements: a built compatible backend with its own installed dependencies
@@ -91,7 +146,8 @@ evidence, not a claim of observing a real DLsite outage.
 
 Overall deadline: 300 seconds plus up to 5 seconds for worker shutdown.
 Poll waits: 90 seconds. Live budget: 48 outbound fetch attempts; normal observed
-run: 20. Native media redirects remain host-owned. Each worker and descendants
+0.1.0 run: 20. In 0.2.0 image redirects use the client and count toward this
+budget too; live mode was not rerun for this change. Each worker and descendants
 are stopped, connection refusal is checked, and temporary credentials, SQLite,
 volumes/media/ZIPs are deleted on success, error or handled interrupt.
 SIGKILL/power loss cannot run JavaScript cleanup.
@@ -101,7 +157,8 @@ Do not build the backend concurrently with a host check copying its output.
 Harness scripts are not unit-covered production logic; all `src/` and
 `plugin/` functionality remains covered with unchanged thresholds.
 The [Actions workflow](ci.md) runs the offline coverage/type/build gates and
-packaged registration smoke on Ubuntu / Node 24, not the live lifecycle.
+packaged registration and offline proxy lifecycle on Ubuntu / Node 24,
+not the live lifecycle.
 Workflow configuration does not establish a successful remote run. See
 [provider.md](provider.md) for the generated-asset preparation and
 [verification.md](verification.md) for actual executed results.

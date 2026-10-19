@@ -1,7 +1,9 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
+import { inspect } from "node:util";
 import { Logger, Module, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { getRepositoryToken } from "@nestjs/typeorm";
 import type { TestingModule } from "@nestjs/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GamevaultGame } from "../../../src/modules/games/gamevault-game.entity.js";
@@ -24,6 +26,7 @@ import {
   parseProductHtml,
   DlsiteClientError,
   DlsiteParseError,
+  DlsiteProxyTransport,
 } from "../src/index.js";
 
 const fixture = (name: string) =>
@@ -43,6 +46,10 @@ const modules: TestingModule[] = [];
 async function setup(productHtml = page()) {
   const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
     const url = new URL(String(input));
+    if (url.hostname === "img.dlsite.jp")
+      return new Response(new Uint8Array([255, 216, 255, 224, 1]), {
+        headers: { "content-type": "image/jpeg" },
+      });
     if (url.pathname.includes("/product/info/")) {
       return Response.json({ [url.searchParams.get("product_id")!]: {} });
     }
@@ -59,8 +66,16 @@ async function setup(productHtml = page()) {
   };
   let imageId = 100;
   const images = {
-    downloadByUrl: vi.fn(async (url: string) => media(imageId++, url)),
+    upload: vi.fn(async (_file: Express.Multer.File, _username: string) =>
+      media(imageId++, ""),
+    ),
+    delete: vi.fn(async (_media: Media) => {}),
     isAvailable: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
+  };
+  const mediaRepository = {
+    update: vi.fn(async (_id: number, _values: { source_url: string }) => ({
+      affected: 1,
+    })),
   };
   const providers = [
     { provide: MetadataService, useValue: metadata },
@@ -82,6 +97,8 @@ async function setup(productHtml = page()) {
   const module = await Test.createTestingModule({
     imports: [DlsitePluginModule],
   })
+    .overrideProvider(getRepositoryToken(Media))
+    .useValue(mediaRepository)
     .overrideModule(MetadataModule)
     .useModule(MetadataBoundary)
     .overrideModule(MediaModule)
@@ -95,12 +112,13 @@ async function setup(productHtml = page()) {
     metadata,
     savedGames,
     images,
+    mediaRepository,
     fetch,
   };
 }
 
 beforeEach(() => {
-  vi.stubEnv("PLUGIN_GAMESGAO_DLSITE_REQUEST_INTERVAL_MS", "0");
+  vi.stubEnv("PLUGIN_DLSITE_REQUEST_INTERVAL_MS", "0");
   vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {});
 });
 afterEach(async () => {
@@ -108,6 +126,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe("native provider behavior", () => {
@@ -124,8 +143,8 @@ describe("native provider behavior", () => {
   });
 
   it("uses configured locale and priority on the actual client/provider", async () => {
-    vi.stubEnv("PLUGIN_GAMESGAO_DLSITE_LOCALE", "zh_TW");
-    vi.stubEnv("PLUGIN_GAMESGAO_DLSITE_PRIORITY", "30");
+    vi.stubEnv("PLUGIN_DLSITE_LOCALE", "zh_TW");
+    vi.stubEnv("PLUGIN_DLSITE_PRIORITY", "30");
     const { provider, fetch } = await setup();
     await provider.search("RJ000001");
     expect(provider.getDto().priority).toBe(30);
@@ -147,7 +166,7 @@ describe("native provider behavior", () => {
         release_date: new Date("2024-02-29T00:00:00Z"),
       });
       expect(result?.description).toContain("## 空の旅");
-      expect(images.downloadByUrl).not.toHaveBeenCalled();
+      expect(images.upload).not.toHaveBeenCalled();
     },
   );
 
@@ -226,7 +245,7 @@ describe("native provider behavior", () => {
       provider_data_id: "RJ000001",
       rating: 85,
     });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(savedGames.findByProviderSlug).toHaveBeenCalledWith("dlsite", {
       loadRelations: true,
     });
@@ -259,7 +278,7 @@ describe("native provider behavior", () => {
     expect(different.developers).toEqual([]);
     expect(different.cover).toBeUndefined();
     expect(different.rating).toBeUndefined();
-    expect(images.downloadByUrl).not.toHaveBeenCalled();
+    expect(images.upload).not.toHaveBeenCalled();
   });
 
   it.each([404, 410])(
@@ -271,7 +290,7 @@ describe("native provider behavior", () => {
         provider.getByProviderDataIdOrFail("RJ000001"),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(savedGames.findByProviderSlug).not.toHaveBeenCalled();
-      expect(images.downloadByUrl).not.toHaveBeenCalled();
+      expect(images.upload).not.toHaveBeenCalled();
     },
   );
 
@@ -301,7 +320,7 @@ describe("native provider behavior", () => {
     await expect(
       provider.getByProviderDataIdOrFail("RJ000001"),
     ).rejects.toThrow("Database unavailable");
-    expect(images.downloadByUrl).not.toHaveBeenCalled();
+    expect(images.upload).not.toHaveBeenCalled();
     expect(savedGames.save).not.toHaveBeenCalled();
   });
 
@@ -329,17 +348,35 @@ describe("native provider behavior", () => {
 });
 
 describe("host image handling", () => {
-  it("downloads actual source images using host MediaService with no invented icon", async () => {
-    const { provider, images } = await setup(fullHtml);
+  it("downloads image bytes through the client, uploads to the host and persists original URLs", async () => {
+    const { provider, images, mediaRepository, fetch } = await setup(fullHtml);
     const result = await provider.getByProviderDataIdOrFail("RJ000001");
     expect(result.cover).toMatchObject({
       source_url: coverUrl,
       type: "image/jpeg",
     });
     expect(result.background).toMatchObject({ source_url: sceneUrl });
-    expect(images.downloadByUrl.mock.calls.map(([url]) => url)).toEqual([
-      coverUrl,
-      sceneUrl,
+    expect(
+      fetch.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes("img.dlsite.jp")),
+    ).toEqual([coverUrl, sceneUrl]);
+    expect(
+      images.upload.mock.calls.map(([file, username]) => ({
+        bytes: [...file.buffer],
+        type: file.mimetype,
+        username,
+      })),
+    ).toEqual(
+      Array(2).fill({
+        bytes: [255, 216, 255, 224, 1],
+        type: "image/jpeg",
+        username: "",
+      }),
+    );
+    expect(mediaRepository.update.mock.calls).toEqual([
+      [100, { source_url: coverUrl }],
+      [101, { source_url: sceneUrl }],
     ]);
   });
 
@@ -354,7 +391,7 @@ describe("host image handling", () => {
     const result = await provider.getByProviderDataIdOrFail("RJ000001");
     expect(result.cover).toBe(previous.cover);
     expect(result.background).toBe(previous.background);
-    expect(images.downloadByUrl).not.toHaveBeenCalled();
+    expect(images.upload).not.toHaveBeenCalled();
   });
 
   it("redownloads same-source images whose host file has disappeared", async () => {
@@ -386,9 +423,7 @@ describe("host image handling", () => {
       },
     );
     savedGames.findByProviderSlug.mockResolvedValue([previous]);
-    images.downloadByUrl.mockRejectedValue(
-      new Error("Download/format unavailable"),
-    );
+    images.upload.mockRejectedValue(new Error("Download/format unavailable"));
     const result = await provider.getByProviderDataIdOrFail("RJ000001");
     expect(result.cover).toBe(previous.cover);
     expect(result.background).toBe(previous.background);
@@ -411,7 +446,7 @@ describe("host image handling", () => {
         savedGames.findByProviderSlug.mockResolvedValue([previous]);
         images.isAvailable.mockResolvedValue(false);
       }
-      images.downloadByUrl.mockRejectedValue(new Error("Image timeout"));
+      images.upload.mockRejectedValue(new Error("Image timeout"));
       await expect(
         provider.getByProviderDataIdOrFail("RJ000001"),
       ).rejects.toThrow("Image timeout");
@@ -429,8 +464,8 @@ describe("host image handling", () => {
     );
     await expect(
       provider.getByProviderDataIdOrFail("RJ000001"),
-    ).rejects.toThrow("HTTPS img.dlsite.jp");
-    expect(images.downloadByUrl).not.toHaveBeenCalled();
+    ).rejects.toThrow("Unsupported DLsite request URL");
+    expect(images.upload).not.toHaveBeenCalled();
   });
 
   it("lets the core discard credential-bearing image URLs instead of fetching them", async () => {
@@ -443,14 +478,99 @@ describe("host image handling", () => {
     expect(
       (await provider.getByProviderDataIdOrFail("RJ000001")).cover,
     ).toBeUndefined();
-    expect(images.downloadByUrl.mock.calls.map(([url]) => url)).toEqual([
-      sceneUrl,
-    ]);
+    expect(images.upload).toHaveBeenCalledTimes(1);
+  });
+
+  describe("transport lifecycle and media persistence failures", () => {
+    it("logs useful supplemental and image failures without credential-bearing causes", async () => {
+      vi.stubEnv(
+        "PLUGIN_DLSITE_PROXY_URL",
+        "http://fixture-user:fixture-password@localhost:8080",
+      );
+      const { provider, fetch, savedGames } = await setup(fullHtml);
+      const previous = mapProduct(
+        parseProductHtml(fullHtml, buildWorkUrl("RJ000001")),
+      );
+      previous.cover = media(1, "https://img.dlsite.jp/old-cover.jpg");
+      previous.background = media(2, "https://img.dlsite.jp/old-scene.jpg");
+      savedGames.findByProviderSlug.mockResolvedValue([previous]);
+      fetch.mockImplementation(async (input) => {
+        if (String(input).includes("/work/")) return html(fullHtml);
+        throw new Error("http://fixture-user:fixture-password@localhost:8080", {
+          cause: new Error("fixture-password"),
+        });
+      });
+      vi.useFakeTimers();
+      const pending = provider.getByProviderDataIdOrFail("RJ000001");
+      await vi.runAllTimersAsync();
+      const result = await pending;
+      expect(result.cover).toBe(previous.cover);
+      expect(result.background).toBe(previous.background);
+      const warnings = inspect(vi.mocked(Logger.prototype.warn).mock.calls, {
+        depth: 20,
+      });
+      expect(warnings).toContain("supplemental data unavailable");
+      expect(warnings).toContain("retaining available same-ID image");
+      expect(warnings).toContain("DLsite network request failed");
+      expect(warnings).not.toMatch(/fixture-user|fixture-password/);
+    });
+
+    it("closes its proxy transport when Nest shuts the plugin down", async () => {
+      vi.stubEnv("PLUGIN_DLSITE_PROXY_URL", "http://localhost:8080");
+      const close = vi.spyOn(DlsiteProxyTransport.prototype, "close");
+      await setup();
+      await modules.pop()!.close();
+      expect(close).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it.each(["database error", "missing row"])(
+      "cleans uploaded media and rejects an unpersisted source URL: %s",
+      async (failure) => {
+        const { provider, images, mediaRepository, savedGames } =
+          await setup(fullHtml);
+        if (failure === "database error")
+          mediaRepository.update.mockRejectedValue(
+            new Error("Media database unavailable"),
+          );
+        else mediaRepository.update.mockResolvedValue({ affected: 0 });
+        await expect(
+          provider.getByProviderDataIdOrFail("RJ000001"),
+        ).rejects.toThrow(
+          failure === "database error"
+            ? "Media database unavailable"
+            : "source URL was not persisted",
+        );
+        expect(images.delete).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 100 }),
+        );
+        expect(savedGames.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it("retains the prior image and cleans the upload if persisting a replacement URL fails", async () => {
+      const { provider, savedGames, images, mediaRepository } =
+        await setup(fullHtml);
+      const previous = mapProduct(
+        parseProductHtml(fullHtml, buildWorkUrl("RJ000001")),
+      );
+      previous.cover = media(1, "https://img.dlsite.jp/old-cover.jpg");
+      previous.background = media(2, sceneUrl);
+      savedGames.findByProviderSlug.mockResolvedValue([previous]);
+      mediaRepository.update.mockRejectedValue(
+        new Error("Media database unavailable"),
+      );
+      const result = await provider.getByProviderDataIdOrFail("RJ000001");
+      expect(result.cover).toBe(previous.cover);
+      expect(result.background).toBe(previous.background);
+      expect(images.delete).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 100 }),
+      );
+    });
   });
 
   it("rejects the whole snapshot if background fails after the cover download", async () => {
     const { provider, images, savedGames } = await setup(fullHtml);
-    images.downloadByUrl
+    images.upload
       .mockResolvedValueOnce(media(3, coverUrl))
       .mockRejectedValueOnce(new Error("Background unavailable"));
     await expect(

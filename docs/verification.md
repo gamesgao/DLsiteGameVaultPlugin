@@ -1,5 +1,132 @@
 # Executed verification
 
+## 0.2.0 scoped proxy acceptance — 2026-10-19
+
+**Actual local execution, not hosted CI or live DLsite evidence.** Started on
+`feat/plugin-proxy` from `498c922`, using the workspace-local disposable
+GameVault **17.0.1 / `859d71ef46f3a1f00a236e5d4c7dbde1eeba02b3`**.
+Native macOS, Node **26.7.0**, host pnpm **11.7.0**, actual SQLite **3.53.4**.
+Only plugin sources and generated host output were changed; tracked backend
+source remained clean. No NAS, SSH, SMB, real library, Hermes changes,
+GitHub authentication/settings changes, agents, commit, push, tag or release.
+`smoke:dlsite` and live `e2e:host` were deliberately **not run**.
+
+### Commands and gates
+
+Backend commands below used `--backend .local/gamevault-backend`, resolving
+to the supplied checkout inside this worktree, not another host installation.
+
+| Executed command | Actual result |
+| --- | --- |
+| `npm ci --no-audit --no-fund` | Passed; root locked dependencies installed |
+| `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` | Passed after adding direct Undici **7.30.1** and version **0.2.0**; existing installed Undici matched the pin |
+| `npm test`, `npm run test:coverage` | **174 tests**, 5 files, passed |
+| Core coverage: lines / functions / branches / statements | **99.47 / 98.36 / 97.45 / 99.02%** |
+| `npm run typecheck`, `npm run build` | Passed |
+| `npm run typecheck:provider -- --backend .local/gamevault-backend` | Passed with actual host types/compiler |
+| `npm run test:provider -- --backend .local/gamevault-backend` | **70 tests**, 3 files, passed |
+| `npm run test:provider:coverage -- --backend .local/gamevault-backend` | Same **70 tests** passed |
+| Provider coverage: lines / functions / branches / statements | **100 / 100 / 94.16 / 100%** |
+| `npm run format:check` | Passed, including workflow YAML and harness scripts |
+| `npm run build:plugin -- --backend .local/gamevault-backend` | Passed; real `artifacts/dlsite-0.2.0.zip`, plugin root and `SHA256SUMS` |
+| `npm run smoke:plugin -- --backend .local/gamevault-backend` | Passed: extracted ZIP, real loader/AppModule, one DLsite, authenticated API, **zero live retrievals** |
+| `npm run smoke:proxy` | Passed: **33** synthetic-origin HTTP responses, **15** CONNECT attempts, **3** independent direct loopback requests |
+| `npm run e2e:proxy -- --backend .local/gamevault-backend` | Passed: packaged plugin, **47** synthetic-origin requests, **12** CONNECT attempts, **zero live DLsite requests** |
+
+Combined FIRST suites: **244 tests**. Existing thresholds remain 90% lines,
+functions and statements / 85% branches for both suites; no production files
+were excluded. The IP-proxy connector's actual socket callback is exercised
+by the separate real-network smoke, not artificially covered by a unit mock.
+The final ZIP is rebuilt with these documents; its exact digest is recorded
+in the generated sidecar, avoiding a self-referential checksum in packaged docs.
+
+### Local proxy proof
+
+The standalone smoke uses actual HTTP and HTTPS proxy servers, CONNECT
+tunnels and a local TLS origin. It tests authenticated HTTP and HTTPS proxies
+and anonymous HTTP proxy use. Across those three successful client runs it
+observed exactly **6 product-page requests (redirect + page), 3 JSON, 12
+search and 12 image requests (redirect + bytes)**. All origin responses are
+minimal synthetic fixtures, not captured live products or artwork.
+
+Temporary credentials include URL-encoded punctuation; the proxy checks
+decoded Basic auth. Neither authorization header reaches the fixture origin.
+An unrelated default-fetch loopback request succeeds outside the proxy in
+each run. Origin TLS without the fixture CA, HTTPS-proxy TLS without that CA,
+wrong proxy auth and CONNECT denial all fail without reaching the origin.
+Direct public DNS is forbidden, so fallback cannot depend on DLsite being
+reachable. Agent closure is awaited; later client requests fail closed.
+All worker output is checked for raw, encoded and Basic credential leakage.
+
+The fixture certificate/key are generated locally, valid for one day and
+removed afterward. Only test workers receive `NODE_EXTRA_CA_CERTS` for this
+certificate. No global TLS verification bypass, proxy or certificate-store
+change is made.
+
+### Real host media/database proof
+
+The host test extracts the ZIP, uses the production loader and real Nest
+AppModule/TypeORM/SQLite/media services, and indexes **three real synthetic
+ZIP archives**, not inserted game records. It authenticates a disposable
+ADMIN and performs actual search, mapping, user edits and media API requests.
+The host process's global fetch is not patched in proxy mode.
+
+| Operation | Observed and asserted |
+| --- | --- |
+| Automatic RJ000001 mapping | Synthetic title/date/circle/genres/tags persisted; JSON supplement supplied score **96** |
+| NC/no-ID and reindex | No guessed mapping; fresh metadata caused no new fixture request |
+| Manual keyword search | Four sections requested through the proxy; expected fixture candidate returned |
+| Same-ID mapping | Existing image IDs reused with no image requests |
+| Different-ID invalid image | Real host byte validation rejected it; API 500, full previous game unchanged, no extra media row or file |
+| Valid RJ000002 remap | Its own cover/background saved with different media IDs |
+| User overrides | Effective title `Fixture user title`, rating **42** and `Fixture user tag` retained |
+| Forced refresh | Redirect, HTML and JSON requested again; available same-ID images reused |
+| Changed image URL returning 404 | Available previous cover/background and original URLs retained |
+| Metadata failure, same/different ID | API 500; complete persisted game unchanged |
+| Fresh-process CONNECT denial | API 500, no origin request/direct DLsite DNS; complete persisted game unchanged |
+| Independent request inside the same host | Default fetch reached separate loopback service without creating a proxy tunnel |
+| Restart and whole-directory 0.2.0 replacement | Same SQLite media rows, source URLs, metadata/media IDs, user values and image bytes; subsequent forced mapping reused reloaded media without image downloads |
+| Removal | Zero registered DLsite after removing volume and injected copy; saved source/media remained available |
+| Shutdown | Every host acknowledged completed Nest shutdown, exited 0, and refused subsequent localhost connections; all owned runtimes/fixtures removed |
+
+A read-only SQL query (`SELECT id, source_url, file_path, type FROM media
+ORDER BY id`) observed **four** real media rows, matching four actual files.
+The original sources were
+`https://img.dlsite.jp/synthetic/RJ000001/{cover,scene}.jpg` and
+`https://img.dlsite.jp/synthetic/RJ000002/{cover,scene}.jpg`, **not** proxy or
+redirect `/bytes/` URLs. Despite `.jpg` source names, host validation correctly
+stored the supplied fixture as `image/png`. Each file and authenticated media
+response contained the same **68-byte one-pixel PNG**, SHA-256:
+
+```text
+a0aba5acea68899495ed59d23aae2942ff229bfaed1d0595acbbd0e2c72f151e
+```
+
+The media SQL rows and file/API hashes remained identical across fresh
+processes. This proves actual `source_url` persistence, not merely assignment
+to a returned JavaScript object. Unit tests additionally cover URL-update DB
+failure/missing row, public host cleanup and previous-image preservation.
+
+### Resolved findings and remaining limits
+
+Initial runs exposed and corrected the host TypeORM test alias (`dist/index.js`),
+Undici 7's IP-as-SNI incompatibility with Node 26, and two fixture-harness
+assumptions: loopback listener DNS is not a public lookup; the pinned host
+may initialize frontend retrieval despite `WEB_UI_ENABLED=false`.
+The final harness explicitly blocks and counts that incidental GitHub DNS
+attempt (**5**, one per host startup), without contacting GitHub or faking a
+successful frontend response. All other non-loopback DNS is rejected.
+The SNI fix uses public Undici APIs and retains certificate IP verification.
+Failed runs also cleaned their temporary hosts and fixtures.
+
+The workflow now includes both offline proxy smokes on Ubuntu / Node 24;
+**the updated hosted workflow and 0.2.0 on Node 24 were not executed here**.
+The historical hosted results below do not certify the new version.
+No live DLsite, NAS, Docker, PostgreSQL, GUI, IPv6-specific, other-host-version
+or real persisted 0.1.0-to-0.2.0 upgrade acceptance is claimed. Same-version
+replacement and environment-name migration tests are not a cross-version
+database upgrade test. Published release/tag acceptance remains maintainer-owned.
+
 ## Hosted Actions acceptance — 2026-10-17
 
 [Actual run 39014813257](https://github.com/gamesgao/DLsiteGameVaultPlugin/actions/runs/39014813257)

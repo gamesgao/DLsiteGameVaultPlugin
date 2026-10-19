@@ -1,6 +1,6 @@
 import type { DlsiteLocale } from "./core/index.js";
 
-const prefix = "PLUGIN_GAMESGAO_DLSITE_";
+const prefix = "PLUGIN_DLSITE_";
 
 export function readDlsiteConfig(env: NodeJS.ProcessEnv = process.env) {
   const locale = env[`${prefix}LOCALE`] ?? "ja_JP";
@@ -21,5 +21,20 @@ export function readDlsiteConfig(env: NodeJS.ProcessEnv = process.env) {
       `${prefix}REQUEST_INTERVAL_MS must be an integer from 0 to 60000`,
     );
   }
-  return { locale: locale as DlsiteLocale, priority, requestIntervalMs };
+  const proxyUrl = env[`${prefix}PROXY_URL`];
+  if (
+    proxyUrl !== undefined &&
+    (!URL.canParse(proxyUrl) ||
+      !["http:", "https:"].includes(new URL(proxyUrl).protocol))
+  ) {
+    throw new TypeError(
+      `${prefix}PROXY_URL must be an HTTP or HTTPS proxy URL`,
+    );
+  }
+  return {
+    locale: locale as DlsiteLocale,
+    priority,
+    requestIntervalMs,
+    proxyUrl,
+  };
 }
